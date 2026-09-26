@@ -23,3 +23,6 @@ python /workspace/pumpgrok/tools/priority_fee.py ...
 - Submit once only
 - On any error or timeout → stop and report “UNKNOWN RESULT – reconcile by signature”
 - Never increase size, change mint, or re-quote and send automatically
+
+## Paper layer and disabled execution package
+Agents do not sign and do not read wallet files. Paper fills go through `python -m layer paper`. The `execution/` package repeats the hard caps, simulates only when a caller injects a transport, and refuses network send unless explicitly configured. `npm run live` refuses by default. Unknown, timed-out, and failed results are not retried. Duplicate receipts are rejected.

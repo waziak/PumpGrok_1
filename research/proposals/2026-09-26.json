@@ -1,0 +1,10 @@
+{
+  "date": "2026-09-26",
+  "mode": "paper",
+  "live_promotion": false,
+  "hard_limits_immutable": true,
+  "real_trades": false,
+  "key_material_present": false,
+  "proposals": [],
+  "notes": "Scaffold for structured trade-candidate proposals. Agents may append JSON candidates. This file cannot weaken hard risk limits, promote the desk to live, or hold key material."
+}

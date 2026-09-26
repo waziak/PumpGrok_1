@@ -37,3 +37,6 @@ description: The constitution of PumpGrok. Defines the 8 roles, Trading Floor ru
 
 ## Evidence Standard
 Every claim must include source URL or on-chain signature + UTC timestamp.
+
+## Research and paper layer
+Agents emit JSON trade candidates only. They do not sign, send, or read wallet files. CHIEF cannot override RISK. The deterministic gate and paper engine live in `layer/`. Hard caps MAX_BUY_SOL=0.005, MAX_TOTAL_EXPOSURE_SOL=0.03, MIN_SOL_RESERVE=0.02, and PAPER_BUY_SOL=0.005 cannot be weakened. `execution/` is built and disabled. `npm run live` refuses by default. Hypotheses in `research/strategies/` are not proof and cannot promote the desk to live.

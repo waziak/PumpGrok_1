@@ -1,0 +1,19 @@
+{
+  "day": "2026-09-26",
+  "mode": "paper",
+  "promote_to_live": false,
+  "hard_limits_changed": false,
+  "hard_caps": {
+    "MAX_BUY_SOL": 0.005,
+    "MAX_TOTAL_EXPOSURE_SOL": 0.03,
+    "MIN_SOL_RESERVE": 0.02,
+    "PAPER_BUY_SOL": 0.005
+  },
+  "hypotheses": [
+    "prebond-volume-regime",
+    "narrative-ceiling-exits"
+  ],
+  "key_material_present": false,
+  "real_trades": false,
+  "notes": "Scaffold daily research. Hypotheses may be paper-tested. They cannot weaken hard risk limits, promote the desk to live, or carry key material."
+}

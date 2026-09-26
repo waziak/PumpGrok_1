@@ -13,7 +13,7 @@ Eight specialist Bots that form the **PumpGrok** Solana memecoin trading desk.
 | exit.md    | EXIT   | Position Manager             | Yes                |
 | shill.md   | SHILL  | Sentiment & Velocity         | No                 |
 
-All eight roles consume grokbot-pipeline evidence via `tools/pipeline_evidence.py`. SNIPER and EXIT remain the only exchange writers.
+All eight roles consume grokbot-pipeline evidence via `tools/pipeline_evidence.py` and the paper research skill `research-paper-layer`. They emit structured JSON candidates only. They do not sign or read wallet files. SNIPER and EXIT remain the only roles marked `writes_to_exchange`, and the `execution/` package still refuses live sends by default.
 
 Each file contains:
 - YAML frontmatter (name, title, description, seat, skills, writes_to_exchange)

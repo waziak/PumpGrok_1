@@ -2,20 +2,22 @@
 
 ![PumpGrok banner](banner.jpg)
 
-PumpGrok is an eight-role Solana memecoin trading desk packaged as agent instructions, 23 skills, a hard security constitution, and read-only Python helpers. It is loaded into a host agent runtime (Grok Bot, Cursor, Claude Code, or Grok Build). It is not a trading bot, exchange client, or signer: private keys never enter the system, and only a human-approved ticket may be sent.
+PumpGrok is an eight-role Solana memecoin trading desk packaged as agent instructions, 24 skills, a hard security constitution, and read-only Python helpers. It is loaded into a host agent runtime (Grok Bot, Cursor, Claude Code, or Grok Build). Agents are not signers: they emit structured trade-candidate JSON only. A separate `execution/` package can sign locally and is disabled by default (`TRADING_MODE=paper`). Private keys never enter agents, prompts, skills, SQLite, or git.
 
 Version 1.0.0.
 
 ## Capabilities
 
 - Eight specialist roles: CHIEF, SCOUT, RISK, WHALE, SNIPER, RUG, EXIT, SHILL (`agents/`)
-- 23 skills covering desk constitution, ticket lifecycle, risk audit, Jupiter routing, discovery, journal conventions, and a vendored dry-run screening engine (`skills/grokbot-pipeline`)
+- 24 skills covering desk constitution, ticket lifecycle, risk audit, Jupiter routing, discovery, journal conventions, the paper research loop (`skills/research-paper-layer`), and a vendored dry-run screening engine (`skills/grokbot-pipeline`)
+- SQLite research store and deterministic paper engine (`python -m layer`, also `npm run research|scan|paper|status`)
+- Disabled local execution package (`execution/`, `npm run live` refuses by default)
 - Always-on desk rule `rules/pumpgrok-team.mdc` (RISK veto, human approval by ticket ID, single-send, no private keys)
 - Read-only CLI helpers for Jupiter quotes, mint/freeze authority, priority fees, ticket IDs, paper fills, holder concentration, and pipeline JSONL evidence (`tools/pipeline_evidence.py`)
 - Repo linter `scripts/check.sh` (frontmatter, constitution phrases, one-writer convention; no network)
 - Plugin manifests for Grok Bot (`plugin.json`), Claude Code (`.claude-plugin/`), Cursor (`.cursor-plugin/`), and Grok Build (`.grok-plugin/`)
 
-The desk starts in **research** mode. **paper** logs simulated fills via `tools/paper_sim.py`. **micro-live** is only enabled after the risk-limits interview and explicit user confirmation. The desk ships no strategies and makes no return claims.
+The desk starts in **research** mode. **paper** logs simulated fills via `tools/paper_sim.py` and `python -m layer paper`. **micro-live** is only enabled after the risk-limits interview and explicit user confirmation. This fork does not enable live trading. Hypotheses under `research/strategies/` are not proof and are not return claims.
 
 ## Requirements
 
@@ -59,6 +61,18 @@ python tools/paper_sim.py --action buy --ticket SOL-20260827-001 \
 
 Working files for a live desk belong under `/workspace/trading-desk/` (created by setup), not inside this repo. `tools/ticket_helper.py` falls back to `./trading-desk/proposals` when `/workspace` is absent.
 
+Paper research from this fork:
+
+```bash
+python -m layer status
+python -m layer scan --input path/to/candidates.json
+python -m layer research --out research/daily/2026-09-26.json
+npm test
+npm run live   # refuses; does not trade
+```
+
+`research/strategies/` holds paper hypotheses, not proof. Hard caps stay at 0.005 SOL per buy, 0.03 SOL exposure, and a 0.02 SOL reserve.
+
 Cursor / Claude Code / Grok Build load `skills/`, `agents/`, and `rules/` from the plugin manifests. On runtimes without persistent Bots, `rules/pumpgrok-team.mdc` says to use subagents or role-labelled passes.
 
 ## Project layout
@@ -69,7 +83,11 @@ Cursor / Claude Code / Grok Build load `skills/`, `agents/`, and `rules/` from t
 | `skills/` | Twenty-three `SKILL.md` procedures |
 | `rules/` | Always-applied desk constitution (`pumpgrok-team.mdc`) |
 | `tools/` | Read/prepare-only Python CLIs (JSON on stdout; never sign or send), including the JSONL desk bridge `tools/pipeline_evidence.py` |
-| `scripts/` | `check.sh` repository linter |
+| `layer/` | Research SQLite, deterministic risk gate, paper engine, CLIs (`research`, `scan`, `paper`, `status`) |
+| `execution/` | Local execution package. Built, disabled by default, no network send from `npm run live` |
+| `research/` | Paper hypotheses, proposal scaffold, daily research |
+| `config/` | Hard SOL caps and default risk thresholds |
+| `scripts/` | `check.sh` repository linter and `security_audit.py` |
 | `vendor/grokbot-pumpfun/` | In-tree vendored screening pipeline (regular files, not a git submodule or gitlink; pin `409e74c905faa0e9de42e918efe2c604f206856e`); notes in `vendor/grokbot-pumpfun/PUMPGROK.md`; desk-facing procedure in `skills/grokbot-pipeline` |
 | `plugin.json` | Root agent-plugins manifest |
 | `.claude-plugin/`, `.cursor-plugin/`, `.grok-plugin/` | Host-specific plugin metadata |

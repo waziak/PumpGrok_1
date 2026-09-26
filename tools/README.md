@@ -69,3 +69,5 @@ These tools improve reliability and speed. They do **not** change the desk’s s
 - SNIPER / EXIT still follow the single-send rule
 - Throwaway wallet only; no seed phrases ever enter the system
 - Paper mode never touches real capital
+
+The research and paper CLIs live in `layer/` (`python -m layer` or `npm run scan|paper|status|research`). Those commands also do not sign. `tools/paper_sim.py` remains the journal helper and can record a SOL size alongside the USD field.
