@@ -34,6 +34,13 @@ export class ReceiptLog {
     return this.rows.get(receiptId);
   }
 
+  findUncertainSignature(signature: string): Receipt | undefined {
+    for (const row of this.rows.values()) {
+      if (row.signature === signature && row.status === "uncertain") return row;
+    }
+    return undefined;
+  }
+
   markUncertain(receiptId: string): Receipt | undefined {
     const row = this.rows.get(receiptId);
     if (!row) return undefined;

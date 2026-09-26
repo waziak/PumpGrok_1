@@ -39,9 +39,10 @@ export type SwapPlan =
       maxSolCostLamports: number;
       slippageBps: number;
       jupiter: typeof JUPITER;
+      wireReady: false;
       notes: string[];
     }
-  | { ok: false; error: string; liveSend: false; sent: false };
+  | { ok: false; error: string; liveSend: false; sent: false; wireReady: false };
 
 export function buildPlan(input: {
   program: string;
@@ -52,13 +53,13 @@ export function buildPlan(input: {
 }): SwapPlan {
   const observed = Date.parse(input.observedAt);
   if (!Number.isFinite(observed) || input.nowMs - observed > MAX_AGE_MS) {
-    return { ok: false, error: "stale_candidate", liveSend: false, sent: false };
+    return { ok: false, error: "stale_candidate", liveSend: false, sent: false, wireReady: false };
   }
   if (input.slippageBps > MAX_SLIPPAGE_BPS || input.slippageBps < 0) {
-    return { ok: false, error: "slippage_exceeds_max", liveSend: false, sent: false };
+    return { ok: false, error: "slippage_exceeds_max", liveSend: false, sent: false, wireReady: false };
   }
   if (!(input.sizeSol > 0) || input.sizeSol - HARD_CAPS.MAX_BUY_SOL > 1e-12) {
-    return { ok: false, error: "excess_size", liveSend: false, sent: false };
+    return { ok: false, error: "excess_size", liveSend: false, sent: false, wireReady: false };
   }
   const program = input.program.toLowerCase();
   const programId = program === "pump" || program === "pump.fun"
@@ -69,7 +70,7 @@ export function buildPlan(input: {
         ? null
         : undefined;
   if (programId === undefined) {
-    return { ok: false, error: "unsupported_program", liveSend: false, sent: false };
+    return { ok: false, error: "unsupported_program", liveSend: false, sent: false, wireReady: false };
   }
   const lamports = Math.round(input.sizeSol * 1_000_000_000);
   const maxSolCostLamports = Math.round(lamports * (1 + input.slippageBps / 10_000));
@@ -83,9 +84,10 @@ export function buildPlan(input: {
     maxSolCostLamports,
     slippageBps: input.slippageBps,
     jupiter: JUPITER,
+    wireReady: false,
     notes: [
-      "Plan only. Jupiter execute and Jito sendBundle are not called by the builder.",
-      "Pump fee tiers are dynamic. Do not treat a paper fee assumption as a live quote.",
+      "Plan only. Account metas for Pump buy_v2 and PumpSwap buy are not assembled here.",
+      "Jupiter /swap/v2/execute is not called. Jito sendBundle is not called by the builder.",
     ],
   };
 }

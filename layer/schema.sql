@@ -108,7 +108,38 @@ CREATE TABLE IF NOT EXISTS strategy_versions (
   PRIMARY KEY (strategy_id, version)
 );
 
+CREATE TABLE IF NOT EXISTS strategy_evaluations (
+  mint TEXT NOT NULL,
+  strategy_id TEXT NOT NULL,
+  execution_class TEXT NOT NULL,
+  matched INTEGER NOT NULL,
+  rules_passed_json TEXT NOT NULL,
+  rules_failed_json TEXT NOT NULL,
+  rules_unknown_json TEXT NOT NULL,
+  entry_reason TEXT,
+  rejection_reason TEXT,
+  observed_at TEXT,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (mint, strategy_id)
+);
+
+CREATE TABLE IF NOT EXISTS pipeline_samples (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  stage TEXT NOT NULL,
+  duration_ms INTEGER NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS bot_health (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  payload_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_features_candidate ON candidate_features(candidate_id);
 CREATE INDEX IF NOT EXISTS idx_reviews_candidate ON agent_reviews(candidate_id);
 CREATE INDEX IF NOT EXISTS idx_risk_candidate ON risk_decisions(candidate_id);
 CREATE INDEX IF NOT EXISTS idx_positions_status ON positions(status);
+CREATE INDEX IF NOT EXISTS idx_positions_mint ON positions(mint);
+CREATE INDEX IF NOT EXISTS idx_paper_mint ON paper_trades(mint);
+CREATE INDEX IF NOT EXISTS idx_pipeline_stage ON pipeline_samples(stage);

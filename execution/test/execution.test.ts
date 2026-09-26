@@ -5,12 +5,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { describeLive, LIVE_CONFIRM, NETWORK_CONFIRM } from "../gate.ts";
+import { describeLive, liveGate } from "../gate.ts";
 import { submitBundle } from "../jito.ts";
 import { executePlan, refusingRpc } from "../live.ts";
 import { PositionBook } from "../positions.ts";
 import { ReceiptLog, reconcileSignature } from "../receipts.ts";
 import { HARD_CAPS, evaluateExecutionRisk } from "../risk-engine.ts";
+import { blockhashExpired } from "../safety.ts";
 import { buildPlan } from "../transaction-builder.ts";
 import { loadPublicPreview, signMessage } from "../wallet.ts";
 
@@ -41,8 +42,7 @@ function candidate(extra: Record<string, unknown> = {}) {
 function openEnv(): Record<string, string> {
   return {
     TRADING_MODE: "live",
-    LIVE_TRADING_CONFIRM: LIVE_CONFIRM,
-    LIVE_NETWORK_SEND: NETWORK_CONFIRM,
+    LIVE_NETWORK_SEND: "true",
   };
 }
 
@@ -223,4 +223,106 @@ test("inaccessible keypair path does not throw secret material", () => {
 test("default rpc transport is disabled", async () => {
   const rpc = refusingRpc();
   await assert.rejects(() => rpc.simulate({}), /rpc_disabled/);
+});
+
+test("broadcast requires live mode and LIVE_NETWORK_SEND=true", () => {
+  assert.equal(liveGate({}).open, false);
+  assert.equal(liveGate({ TRADING_MODE: "live" }).open, false);
+  assert.equal(liveGate({ TRADING_MODE: "paper", LIVE_NETWORK_SEND: "true" }).open, false);
+  assert.equal(liveGate(openEnv()).open, true);
+  const described = describeLive(openEnv());
+  assert.equal(described.sent, false);
+  assert.equal(described.signed, false);
+  assert.equal(described.wireReady, false);
+  assert.equal(described.liveSendDisabled, true);
+});
+
+test("plan is not a wire transaction", () => {
+  const plan = buildPlan({
+    program: "pump",
+    sizeSol: 0.005,
+    slippageBps: 100,
+    observedAt: "2026-09-26T18:00:00Z",
+    nowMs: NOW,
+  });
+  assert.equal(plan.ok, true);
+  if (plan.ok) assert.equal(plan.wireReady, false);
+});
+
+test("expired blockhash is not sent", async () => {
+  assert.equal(blockhashExpired(NOW - 120_000, NOW), true);
+  let sends = 0;
+  const result = await executePlan({
+    env: openEnv(),
+    candidate: candidate(),
+    rpc: {
+      async getBalance() {
+        return 1_000_000_000;
+      },
+      async simulate() {
+        return { ok: true };
+      },
+      async send() {
+        sends += 1;
+        return { signature: "should-not-send" };
+      },
+      async confirm() {
+        return "confirmed";
+      },
+    },
+    jito: { async sendBundle() { return { bundleId: "nope" }; } },
+    receipts: new ReceiptLog(),
+    receiptId: "r-blockhash",
+    signedTransaction: "c2lnbmVkLXBsYW4=",
+    blockhashFetchedAtMs: NOW - 120_000,
+    nowMs: NOW,
+    openExposureSol: 0,
+    walletSol: 1,
+  });
+  assert.equal(result.error, "blockhash_expired");
+  assert.equal(result.sent, false);
+  assert.equal(result.retry, false);
+  assert.equal(sends, 0);
+});
+
+test("uncertain signature is not resent", async () => {
+  const receipts = new ReceiptLog();
+  receipts.record({
+    receiptId: "prior",
+    status: "uncertain",
+    signature: "sig-uncertain",
+    retry: false,
+    payload: {},
+  });
+  let sends = 0;
+  const result = await executePlan({
+    env: openEnv(),
+    candidate: candidate(),
+    rpc: {
+      async getBalance() {
+        return 1_000_000_000;
+      },
+      async simulate() {
+        return { ok: true };
+      },
+      async send() {
+        sends += 1;
+        return { signature: "sig-uncertain" };
+      },
+      async confirm() {
+        return null;
+      },
+    },
+    jito: { async sendBundle() { throw new Error("jito_disabled"); } },
+    receipts,
+    receiptId: "r-resend",
+    signedTransaction: "c2lnbmVkLXBsYW4=",
+    uncertainSignature: "sig-uncertain",
+    nowMs: NOW,
+    openExposureSol: 0,
+    walletSol: 1,
+  });
+  assert.equal(result.error, "uncertain_no_resend");
+  assert.equal(result.retry, false);
+  assert.equal(sends, 0);
 });

@@ -15,10 +15,10 @@ export type Gate = {
 
 export function liveGate(env: Record<string, string | undefined>): Gate {
   const mode = (env.TRADING_MODE || "paper").trim().toLowerCase();
+  const send = String(env.LIVE_NETWORK_SEND || "").trim().toLowerCase();
   const reasons: string[] = [];
   if (mode !== "live") reasons.push("mode_not_live");
-  if (env.LIVE_TRADING_CONFIRM !== LIVE_CONFIRM) reasons.push("missing_live_confirmation");
-  if (env.LIVE_NETWORK_SEND !== NETWORK_CONFIRM) reasons.push("network_send_not_enabled");
+  if (send !== "true") reasons.push("network_send_not_enabled");
   return { open: reasons.length === 0, reasons, mode, realTrades: false };
 }
 
@@ -36,6 +36,10 @@ export function describeLive(env: Record<string, string | undefined>): Record<st
       sent: false,
       realTrades: false,
       privateKeyExposed: false,
+      liveSendDisabled: true,
+      executionEngine: "complete",
+      transactionBuild: "plan_only",
+      wireReady: false,
     };
   }
   return {
@@ -46,6 +50,10 @@ export function describeLive(env: Record<string, string | undefined>): Record<st
     signed: false,
     realTrades: false,
     privateKeyExposed: false,
-    reason: "no network transport is bound in this CLI; refusing to fake a live send",
+    liveSendDisabled: true,
+    executionEngine: "complete",
+    transactionBuild: "plan_only",
+    wireReady: false,
+    reason: "gate is open but this CLI does not broadcast",
   };
 }

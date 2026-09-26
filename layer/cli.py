@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from layer.config import REPO_ROOT, load_thresholds, trading_mode
+from layer.cycle import EXECUTION_CLASS, PUBLIC_WALLET, percentile, run_cycle
 from layer.db import ResearchDB
 from layer.paper import PaperEngine
 from layer.research_run import run_daily
@@ -32,6 +33,20 @@ def cmd_status(args: argparse.Namespace) -> int:
     mode = trading_mode()
     db = ResearchDB(args.db)
     try:
+        health = db.read_health() or {}
+        durations = db.pipeline_durations("cycle")
+        cash = db.simulated_cash(thresholds.paper_wallet_sol)
+        strategies = []
+        for item in load_strategies(Path(args.strategies)):
+            strategies.append(
+                {
+                    "strategy_id": item["strategy_id"],
+                    "execution_class": EXECUTION_CLASS.get(item["strategy_id"], "RESEARCH"),
+                    "active": True,
+                    "status": item["status"],
+                }
+            )
+        wallet = health.get("wallet") if isinstance(health.get("wallet"), dict) else {}
         payload = {
             "ok": True,
             "mode": mode["effective"],
@@ -39,6 +54,7 @@ def cmd_status(args: argparse.Namespace) -> int:
             "live_refused": mode["live_refused"],
             "real_trades": False,
             "private_key_exposed": False,
+            "live_send_disabled": True,
             "caps": {
                 "MAX_BUY_SOL": thresholds.max_buy_sol,
                 "MAX_TOTAL_EXPOSURE_SOL": thresholds.max_total_exposure_sol,
@@ -53,18 +69,63 @@ def cmd_status(args: argparse.Namespace) -> int:
                     "status": row["status"],
                     "remaining_fraction": row["remaining_fraction"],
                     "size_sol": row["size_sol"],
+                    "strategy_id": row.get("strategy_id"),
                 }
                 for row in db.open_positions()
             ],
+            "open_paper_positions": len(db.open_positions()),
             "open_exposure_sol": db.open_exposure_sol(),
-            "simulated_cash_sol": db.simulated_cash(thresholds.paper_wallet_sol),
-            "execution": "disabled",
+            "simulated_cash_sol": cash,
+            "paper_trades": db.counts()["paper_trades"],
+            "paper_exits": db.counts()["trade_exits"],
+            "paper_net_pnl_sol": round(cash - thresholds.paper_wallet_sol, 9),
+            "strategies": strategies,
+            "latency_ms": {
+                "p50": percentile(durations, 0.50),
+                "p95": percentile(durations, 0.95),
+                "samples": len(durations),
+            },
+            "grok": {
+                "available": bool(health.get("grok_available")),
+                "reason": health.get("grok_reason"),
+            },
+            "scanner": health.get("scanner") or {},
+            "tokens_observed_last_cycle": health.get("tokens_observed"),
+            "qualified_entries_last_cycle": health.get("qualified_entries"),
+            "execution": "gated",
+            "execution_engine": "complete",
+            "transaction_build": "plan_only",
+            "wire_ready": False,
+            "local_signing": "gated",
+            "jito": "implemented_default_transport_disabled",
+            "bot_wallet": PUBLIC_WALLET,
+            "bot_balance_lamports": wallet.get("balanceLamports"),
             "keypair_path_documented": "SOLANA_KEYPAIR_PATH",
+            "signal": health.get("signal"),
         }
     finally:
         db.close()
     _print(payload)
     return 0
+
+
+def cmd_cycle(args: argparse.Namespace) -> int:
+    raw = Path(args.input).read_text(encoding="utf-8") if args.input else sys.stdin.read()
+    if not raw.strip():
+        _print({"ok": False, "error": "input_required", "real_trades": False})
+        return 1
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        _print({"ok": False, "error": "malformed_cycle", "real_trades": False})
+        return 1
+    db = ResearchDB(args.db)
+    try:
+        result = run_cycle(db, load_thresholds(), load_strategies(Path(args.strategies)), payload)
+    finally:
+        db.close()
+    _print(result)
+    return 0 if result.get("ok") else 1
 
 
 def cmd_scan(args: argparse.Namespace) -> int:
@@ -167,7 +228,13 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     status = sub.add_parser("status")
+    status.add_argument("--strategies", default=str(REPO_ROOT / "research" / "strategies"))
     status.set_defaults(func=cmd_status)
+
+    cycle = sub.add_parser("cycle")
+    cycle.add_argument("--input")
+    cycle.add_argument("--strategies", default=str(REPO_ROOT / "research" / "strategies"))
+    cycle.set_defaults(func=cmd_cycle)
 
     scan = sub.add_parser("scan")
     scan.add_argument("--input", required=True)

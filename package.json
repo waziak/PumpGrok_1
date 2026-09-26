@@ -2,14 +2,16 @@
   "name": "pumpgrok-paper-layer",
   "private": true,
   "type": "module",
-  "description": "Paper research layer and a disabled local execution stub for the PumpGrok fork.",
+  "description": "Paper research bot with a gated live execution path for the PumpGrok fork.",
   "scripts": {
     "research": "python3 -m layer research",
     "scan": "python3 -m layer scan",
     "paper": "python3 -m layer paper",
     "status": "python3 -m layer status",
-    "test": "python3 -m unittest discover -s tests -v && node --experimental-strip-types --test execution/test/execution.test.ts",
+    "bot": "node --experimental-strip-types bot/run.ts",
+    "test": "python3 -m unittest discover -s tests -v && node --experimental-strip-types --test execution/test/execution.test.ts scanner/test/scanner.test.ts scanner/test/live-scanner.test.ts",
     "live": "node --experimental-strip-types execution/live.ts",
-    "audit": "python3 scripts/security_audit.py"
+    "audit": "python3 scripts/security_audit.py",
+    "security:audit": "python3 scripts/security_audit.py"
   }
 }

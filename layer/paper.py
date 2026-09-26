@@ -172,9 +172,82 @@ class PaperEngine:
                 "mode": "paper",
             }
 
+        return self._open_fill(candidate, result, strategy, strategy_note)
+
+    def enter_discovered(
+        self,
+        candidate: dict[str, Any],
+        strategy: dict[str, Any],
+        *,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        """Paper-enter a candidate that the scanner already stored. Never buys the same mint twice."""
+        now = now or datetime.now(timezone.utc)
+        mint = str(candidate.get("mint") or "")
+        if self.db.mint_has_open_position(mint) or self.db.mint_has_buy(mint):
+            return {
+                "ok": True,
+                "traded": False,
+                "reason": "duplicate_mint",
+                "mint": mint,
+                "real_trades": False,
+                "sent": False,
+                "mode": "paper",
+            }
+        wallet = self.db.simulated_cash(self.thresholds.paper_wallet_sol)
+        exposure = self.db.open_exposure_sol()
+        result = evaluate(
+            candidate,
+            self.thresholds,
+            now=now,
+            open_exposure_sol=exposure,
+            wallet_sol=wallet,
+            execution_delay_sec=FILL_DELAY_SEC,
+        )
+        self.db.add_risk_decision(
+            {
+                "candidate_id": candidate["candidate_id"],
+                "decision": result.decision,
+                "reasons": result.reasons,
+                "thresholds": self.thresholds.as_public_dict(),
+                "override_attempt": result.override_attempt,
+            }
+        )
+        if not result.passed or result.size_sol is None:
+            return {
+                "ok": True,
+                "traded": False,
+                "decision": "REJECT",
+                "reasons": result.reasons,
+                "override_attempt": result.override_attempt,
+                "candidate_id": candidate["candidate_id"],
+                "real_trades": False,
+                "sent": False,
+                "mode": "paper",
+            }
+        if not self.db.candidate_exists(candidate["candidate_id"]):
+            self._store_candidate(candidate, "paper_open")
+        else:
+            self.db.upsert_features(candidate["candidate_id"], feature_rows(candidate, candidate["source"]))
+            self.db.set_status(candidate["candidate_id"], "paper_open")
+        note = {
+            "strategy_id": strategy.get("strategy_id"),
+            "matched": True,
+            "execution_class": strategy.get("execution_class"),
+        }
+        return self._open_fill(candidate, result, strategy, note)
+
+    def _open_fill(
+        self,
+        candidate: dict[str, Any],
+        result: RiskResult,
+        strategy: dict[str, Any] | None,
+        strategy_note: dict[str, Any] | None,
+    ) -> dict[str, Any]:
         price = float(candidate["features"]["price_sol"])
         slippage = candidate.get("slippage_bps") or PAPER_SLIPPAGE_BPS
         slippage = min(int(slippage), self.thresholds.max_slippage_bps)
+        assert result.size_sol is not None
         costs = cost_model(result.size_sol, slippage)
         if costs["effective_sol"] <= 0:
             return {"ok": False, "error": "costs_exceed_size", "real_trades": False}
@@ -199,10 +272,13 @@ class PaperEngine:
             "simulated_wallet": True,
             "exit_params": _exit_params(strategy),
             "blind_2x": False,
+            "signal_price_sol": price,
+            "fill_price_sol": effective_entry,
         }
         fill = {
             "tokens": tokens,
             "effective_entry_price": effective_entry,
+            "signal_price_sol": price,
             "delay_sec": FILL_DELAY_SEC,
             "mode": "paper",
             "sent": False,
@@ -263,6 +339,8 @@ class PaperEngine:
             "costs": costs,
             "journal": journal,
             "strategy": strategy_note,
+            "signal_price_sol": price,
+            "fill_price_sol": effective_entry,
         }
 
     def exit(

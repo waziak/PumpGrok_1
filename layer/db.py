@@ -33,6 +33,7 @@ class ResearchDB:
         self.conn = sqlite3.connect(self.path)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA foreign_keys = ON")
+        self.conn.execute("PRAGMA journal_mode = WAL")
         schema = Path(__file__).with_name("schema.sql").read_text(encoding="utf-8")
         self.conn.executescript(schema)
         self.conn.commit()
@@ -259,6 +260,129 @@ class ResearchDB:
         )
         self.conn.commit()
 
+    def touch_candidate(self, row: dict[str, Any], *, status_if_new: str) -> str:
+        """Insert a discovery row or refresh market fields without clobbering an open paper position."""
+        if self.candidate_exists(row["candidate_id"]):
+            self.conn.execute(
+                """
+                UPDATE candidates SET
+                  symbol = ?,
+                  name = ?,
+                  source = ?,
+                  program = ?,
+                  market_cap_usd = ?,
+                  observed_at = ?,
+                  payload_json = ?
+                WHERE candidate_id = ?
+                """,
+                (
+                    row.get("symbol"),
+                    row.get("name"),
+                    row.get("source"),
+                    row.get("program"),
+                    row.get("market_cap_usd"),
+                    row.get("observed_at"),
+                    row["payload_json"],
+                    row["candidate_id"],
+                ),
+            )
+            self.conn.commit()
+            return "updated"
+        self.insert_candidate({**row, "status": status_if_new})
+        return "inserted"
+
+    def upsert_strategy_evaluation(self, row: dict[str, Any]) -> None:
+        self.conn.execute(
+            """
+            INSERT INTO strategy_evaluations (
+              mint, strategy_id, execution_class, matched, rules_passed_json,
+              rules_failed_json, rules_unknown_json, entry_reason, rejection_reason,
+              observed_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(mint, strategy_id) DO UPDATE SET
+              execution_class = excluded.execution_class,
+              matched = excluded.matched,
+              rules_passed_json = excluded.rules_passed_json,
+              rules_failed_json = excluded.rules_failed_json,
+              rules_unknown_json = excluded.rules_unknown_json,
+              entry_reason = excluded.entry_reason,
+              rejection_reason = excluded.rejection_reason,
+              observed_at = excluded.observed_at,
+              updated_at = excluded.updated_at
+            """,
+            (
+                row["mint"],
+                row["strategy_id"],
+                row["execution_class"],
+                1 if row.get("matched") else 0,
+                json.dumps(row.get("rules_passed") or []),
+                json.dumps(row.get("rules_failed") or []),
+                json.dumps(row.get("rules_unknown") or []),
+                row.get("entry_reason"),
+                row.get("rejection_reason"),
+                row.get("observed_at"),
+                row.get("updated_at") or utc_now(),
+            ),
+        )
+        self.conn.commit()
+
+    def add_pipeline_sample(self, stage: str, duration_ms: int) -> None:
+        self.conn.execute(
+            "INSERT INTO pipeline_samples (stage, duration_ms, created_at) VALUES (?, ?, ?)",
+            (stage, int(duration_ms), utc_now()),
+        )
+        self.conn.commit()
+
+    def pipeline_durations(self, stage: str, limit: int = 200) -> list[int]:
+        rows = self.conn.execute(
+            """
+            SELECT duration_ms FROM pipeline_samples
+            WHERE stage = ?
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (stage, limit),
+        ).fetchall()
+        return [int(row[0]) for row in rows]
+
+    def write_health(self, payload: dict[str, Any]) -> None:
+        self.conn.execute(
+            """
+            INSERT INTO bot_health (id, payload_json, updated_at)
+            VALUES (1, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              payload_json = excluded.payload_json,
+              updated_at = excluded.updated_at
+            """,
+            (json.dumps(payload), utc_now()),
+        )
+        self.conn.commit()
+
+    def read_health(self) -> dict[str, Any] | None:
+        row = self.conn.execute("SELECT payload_json FROM bot_health WHERE id = 1").fetchone()
+        if row is None:
+            return None
+        data = json.loads(row[0])
+        return data if isinstance(data, dict) else None
+
+    def mint_has_buy(self, mint: str) -> bool:
+        row = self.conn.execute(
+            "SELECT 1 FROM paper_trades WHERE mint = ? AND side = 'buy' LIMIT 1",
+            (mint,),
+        ).fetchone()
+        return row is not None
+
+    def mint_has_open_position(self, mint: str) -> bool:
+        row = self.conn.execute(
+            """
+            SELECT 1 FROM positions
+            WHERE mint = ? AND status IN ('open', 'partial')
+            LIMIT 1
+            """,
+            (mint,),
+        ).fetchone()
+        return row is not None
+
     def candidate_exists(self, candidate_id: str) -> bool:
         row = self.conn.execute(
             "SELECT 1 FROM candidates WHERE candidate_id = ?", (candidate_id,)
@@ -316,6 +440,8 @@ class ResearchDB:
             "execution_receipts",
             "daily_research",
             "strategy_versions",
+            "strategy_evaluations",
+            "pipeline_samples",
         )
         out: dict[str, int] = {}
         for table in tables:

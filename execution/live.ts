@@ -10,6 +10,7 @@ import { submitBundle } from "./jito.ts";
 import type { JitoTransport } from "./jito.ts";
 import { ReceiptLog, reconcileSignature } from "./receipts.ts";
 import { evaluateExecutionRisk } from "./risk-engine.ts";
+import { blockhashExpired } from "./safety.ts";
 import { buildPlan } from "./transaction-builder.ts";
 
 export type RpcTransport = {
@@ -44,6 +45,8 @@ export async function executePlan(input: {
   receipts: ReceiptLog;
   receiptId: string;
   signedTransaction?: string;
+  blockhashFetchedAtMs?: number;
+  uncertainSignature?: string;
   nowMs: number;
   openExposureSol: number;
   walletSol: number | null;
@@ -104,6 +107,31 @@ export async function executePlan(input: {
     return { ok: false, decision: "REJECT", reasons: reserve.reasons, sent: false, signed: false, retry: false, realTrades: false };
   }
   const signedTransaction = input.signedTransaction;
+  if (
+    typeof input.blockhashFetchedAtMs === "number" &&
+    blockhashExpired(input.blockhashFetchedAtMs, input.nowMs)
+  ) {
+    return {
+      ok: false,
+      error: "blockhash_expired",
+      sent: false,
+      signed: Boolean(signedTransaction),
+      retry: false,
+      realTrades: false,
+      wireReady: false,
+    };
+  }
+  if (input.uncertainSignature && input.receipts.findUncertainSignature(input.uncertainSignature)) {
+    return {
+      ok: false,
+      error: "uncertain_no_resend",
+      sent: false,
+      signed: Boolean(signedTransaction),
+      retry: false,
+      realTrades: false,
+      wireReady: false,
+    };
+  }
   if (!signedTransaction) {
     input.receipts.record({
       receiptId: input.receiptId,
