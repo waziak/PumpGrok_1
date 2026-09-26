@@ -60,6 +60,7 @@ DEFAULT_EXIT_PARAMS: dict[str, Any] = {
     "volume_floor_sol_5m": 0.5,
     "blind_2x": False,
     "ceiling_adaptive": False,
+    "exit_below_avg_entry": False,
 }
 
 FULL_EXIT_ORDER = (
@@ -456,7 +457,10 @@ def evaluate_exits(
             signals.append(_signal("liquidity_deterioration", 1.0))
 
     if price is not None and entry is not None:
-        if price <= entry * (1 - float(params["fixed_stop_pct"])):
+        below_avg = bool(params.get("exit_below_avg_entry")) and price < entry
+        stop_pct = float(params["fixed_stop_pct"])
+        stopped = stop_pct > 0 and price <= entry * (1 - stop_pct)
+        if below_avg or stopped:
             signals.append(_signal("fixed_stop", 1.0))
 
     entry_vol = _num((position.get("state") or {}).get("entry_volume_sol_5m"))

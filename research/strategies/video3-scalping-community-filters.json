@@ -1,0 +1,214 @@
+{
+  "strategy_id": "video3-scalping-community-filters",
+  "version": "0.1.0",
+  "status": "paper-only",
+  "claim_status": "hypothesis",
+  "evidence_status": "hypothesis_not_evidence",
+  "chain": "solana",
+  "multi_chain": "out_of_scope_v1",
+  "source_url": null,
+  "notes": "User-supplied scalping transcript parsed as hypotheses only. Creator P&L and works-100-percent claims are not evidence. Social fields stay UNKNOWN unless a candidate supplies them.",
+  "factual_filter_settings_claimed": {
+    "evidence_class": "claimed_settings_not_verified",
+    "launchpad_allowlist": ["pump.fun"],
+    "reject_when_detectable": ["other launchpads", "Meteora-style alternate launches"],
+    "prefer_cohorts": ["non_migrated", "final_stretch", "new_pair"],
+    "skip_migrated": true,
+    "new_pairs_min_market_cap_usd": 7000,
+    "final_stretch_audit": {
+      "age_max_minutes": 40,
+      "max_dev_holding_pct": 5,
+      "max_insiders_pct": 20,
+      "min_prot_traders": 10,
+      "min_market_cap_usd": 8000
+    },
+    "pullback_from_local_ath": "about 40 to 50 percent",
+    "reject_shallow_dip": "about 10 percent, described at higher market cap; higher market cap was not quantified",
+    "exit": "hard exit if price is below average entry"
+  },
+  "opinion_vs_measurable": {
+    "opinion_not_evidence": [
+      "Creator profit-and-loss stories",
+      "Any claim that the method works 100 percent of the time",
+      "Portfolio size bands for live trading",
+      "Unquantified preference for community vibe",
+      "The phrase higher market cap on shallow dips, because no cutoff was stated"
+    ],
+    "measurable_when_present": [
+      "launchpad or program",
+      "migration_status",
+      "market_cap_usd",
+      "age_minutes",
+      "dev_holding_pct",
+      "insiders_pct",
+      "prot_traders",
+      "pullback_from_ath_pct",
+      "token_type",
+      "bundle flags",
+      "social flags"
+    ],
+    "encoding_choice": "Shallow dips are rejected by a 0.40 minimum pullback at every market cap. No higher-MC cutoff was invented. Percents in the audit are stored as fractions 0.05 and 0.20. Signal staleness for execution stays on its own clock and is not widened to 40 minutes."
+  },
+  "hypotheses": [
+    {
+      "id": "h1_pumpfun_only",
+      "claim": "Pump.fun-only candidates differ in paper outcome from other launchpads.",
+      "null_hypothesis": "Launchpad has no association with paper outcome after the hard risk gate.",
+      "test": "Compare paper results for program pump versus other detected pads. Missing launchpad stays UNKNOWN."
+    },
+    {
+      "id": "h2_new_pair_mc",
+      "claim": "New pairs at or above about 7000 USD market cap differ from those below that level.",
+      "null_hypothesis": "A 7000 USD market-cap split has no association with paper outcome.",
+      "test": "Bucket new_pair candidates at the claimed floor. Missing market cap stays UNKNOWN."
+    },
+    {
+      "id": "h3_final_stretch_audit",
+      "claim": "Final-stretch coins inside the claimed age, dev, insider, pro-trader, and market-cap bounds differ from those outside them.",
+      "null_hypothesis": "The final-stretch audit bundle has no association with paper outcome.",
+      "test": "Require each audit field when migration_status is final_stretch. A missing field is UNKNOWN and does not pass."
+    },
+    {
+      "id": "h4_community_class",
+      "claim": "When token class is observed, community coins differ from tweet-speculation and profile-project coins.",
+      "null_hypothesis": "Observed token class has no association with paper outcome.",
+      "test": "Use token_type only when present. UNKNOWN is not classified as community and is not evidence."
+    },
+    {
+      "id": "h5_pullback",
+      "claim": "Entries after about a 40 to 50 percent pullback from the local high differ from shallow about-10-percent dips.",
+      "null_hypothesis": "Pullback depth has no association with paper outcome.",
+      "test": "Require pullback_from_ath_pct of at least 0.40. A 0.10 reading fails. Missing pullback stays UNKNOWN."
+    },
+    {
+      "id": "h6_hard_jeet",
+      "claim": "Exiting when price is below average entry changes the paper loss path versus holding.",
+      "null_hypothesis": "An exit at average entry does not change the paper loss distribution.",
+      "test": "exit_below_avg_entry fires a full fixed stop when mark is below entry. It does not fire a blind 2x."
+    },
+    {
+      "id": "h7_bundle_and_social",
+      "claim": "Bundle heuristics and community-social flags differ in paper outcome when those fields are observed.",
+      "null_hypothesis": "Observed bundle and social flags have no association with paper outcome.",
+      "test": "False or negative observed flags fail the filter. Absent flags stay UNKNOWN and are not filled in."
+    }
+  ],
+  "feature_schema": {
+    "launchpad": {
+      "feature_key": "launchpad",
+      "type": "enum",
+      "claimed": "pump.fun only; reject other pads including Meteora when detectable",
+      "missing": "UNKNOWN",
+      "proxy": "program pump is accepted when launchpad itself is absent"
+    },
+    "migration_status": {
+      "feature_key": "migration_status",
+      "type": "enum",
+      "values": ["non_migrated", "final_stretch", "new_pair", "migrated"],
+      "missing": "UNKNOWN"
+    },
+    "market_cap_usd": {
+      "feature_key": "market_cap_usd",
+      "type": "number_usd",
+      "claimed_floors": {"new_pair": 7000, "final_stretch": 8000},
+      "missing": "UNKNOWN"
+    },
+    "age_minutes": {
+      "feature_key": "age_minutes",
+      "type": "number_minutes",
+      "claimed_max_final_stretch": 40,
+      "missing": "UNKNOWN",
+      "not_the_same_as": "candidate signal staleness"
+    },
+    "dev_holding_pct": {
+      "feature_key": "dev_holding_pct",
+      "type": "fraction_0_to_1",
+      "claimed_max": 0.05,
+      "claimed_display_pct": 5,
+      "missing": "UNKNOWN"
+    },
+    "insiders_pct": {
+      "feature_key": "insiders_pct",
+      "type": "fraction_0_to_1",
+      "claimed_max": 0.20,
+      "claimed_display_pct": 20,
+      "missing": "UNKNOWN"
+    },
+    "prot_traders": {
+      "feature_key": "prot_traders",
+      "type": "count",
+      "claimed_min_final_stretch": 10,
+      "missing": "UNKNOWN"
+    },
+    "token_type": {
+      "feature_key": "token_type",
+      "type": "enum",
+      "prefer": "community",
+      "reject_when_present": ["tweet_speculation", "profile_project"],
+      "missing": "UNKNOWN"
+    },
+    "pullback_from_ath_pct": {
+      "feature_key": "pullback_from_ath_pct",
+      "type": "fraction_0_to_1",
+      "claimed_entry_band": [0.40, 0.50],
+      "paper_minimum": 0.40,
+      "missing": "UNKNOWN"
+    },
+    "bundle_sol_balances_similar": {"feature_key": "bundle_sol_balances_similar", "type": "bool", "missing": "UNKNOWN"},
+    "bundle_funding_clustered": {"feature_key": "bundle_funding_clustered", "type": "bool", "missing": "UNKNOWN"},
+    "launch_candle_single_green": {"feature_key": "launch_candle_single_green", "type": "bool", "missing": "UNKNOWN"},
+    "ca_in_bio": {"feature_key": "ca_in_bio", "type": "bool", "missing": "UNKNOWN", "source": "only when social data is supplied"},
+    "pinned_post_has_ca": {"feature_key": "pinned_post_has_ca", "type": "bool", "missing": "UNKNOWN", "source": "only when social data is supplied"},
+    "discussion_quality": {
+      "feature_key": "discussion_quality",
+      "type": "enum",
+      "values": ["real_discussion", "link_spam"],
+      "missing": "UNKNOWN",
+      "source": "only when social data is supplied"
+    }
+  },
+  "entry": {
+    "program": "pump",
+    "launchpad_allowlist": ["pump"],
+    "migration_allowlist": ["non_migrated", "final_stretch", "new_pair"],
+    "skip_migrated": true,
+    "new_pair_min_market_cap_usd": 7000,
+    "final_stretch": {
+      "age_max_minutes": 40,
+      "max_dev_holding_pct": 0.05,
+      "max_insiders_pct": 0.20,
+      "min_prot_traders": 10,
+      "min_market_cap_usd": 8000
+    },
+    "min_pullback_from_ath_pct": 0.40,
+    "token_type_allowlist": ["community"],
+    "token_type_reject": ["tweet_speculation", "profile_project"],
+    "discussion_quality_allowlist": ["real_discussion"],
+    "discussion_quality_reject": ["link_spam"],
+    "optional_bool_flags": [
+      "bundle_sol_balances_similar",
+      "bundle_funding_clustered",
+      "launch_candle_single_green",
+      "ca_in_bio",
+      "pinned_post_has_ca"
+    ]
+  },
+  "exits": {
+    "fixed_stop_pct": 0.25,
+    "trail_pct": 0.2,
+    "partial_r": 1.0,
+    "partial_fraction": 0.5,
+    "target_r": 2.0,
+    "momentum_volume_ratio": 0.4,
+    "liquidity_ratio": 0.5,
+    "volume_floor_sol_5m": 0.5,
+    "exit_below_avg_entry": true,
+    "blind_2x": false
+  },
+  "non_binding_research_note": {
+    "topic": "port_size_bands",
+    "binding": false,
+    "paper_enforcement": "ignored",
+    "text": "Size bands by portfolio are opinion for live trading. Paper keeps the desk buy at 0.005 SOL. This note cannot raise that buy, raise total exposure, or lower the SOL reserve, and it is not evidence."
+  }
+}

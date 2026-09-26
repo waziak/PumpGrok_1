@@ -36,6 +36,7 @@ npm run live
 - Missing features stay UNKNOWN. Do not fill them with zeros or guesses.
 - CHIEF cannot override a RISK veto or a deterministic REJECT.
 - Hypotheses under `research/strategies/` are paper tests, not proof and not return claims.
+- `video3-scalping-community-filters` is a parsed transcript. Creator P&L and certainty claims are hypotheses, not evidence. Missing social fields stay UNKNOWN.
 - Do not put key material in proposals, SQLite, logs, or git.
 - `execution/` may sign only after its own gate opens. Default is closed.
 - Exit families are structure invalidation, fixed stop, trailing stop, partial profit, momentum loss, liquidity deterioration, volume breakdown, and fixed R-multiple. Do not add a blind 2x rule.

@@ -41,6 +41,20 @@ FEATURE_KEYS = (
     "price_sol",
     "holder_reward_flag",
     "structure_valid",
+    "launchpad",
+    "migration_status",
+    "age_minutes",
+    "dev_holding_pct",
+    "insiders_pct",
+    "prot_traders",
+    "token_type",
+    "pullback_from_ath_pct",
+    "bundle_sol_balances_similar",
+    "bundle_funding_clustered",
+    "launch_candle_single_green",
+    "ca_in_bio",
+    "pinned_post_has_ca",
+    "discussion_quality",
 )
 NUMERIC_FEATURES = {
     "liquidity_sol",
@@ -50,8 +64,57 @@ NUMERIC_FEATURES = {
     "market_cap_usd",
     "volume_sol_5m",
     "price_sol",
+    "age_minutes",
+    "dev_holding_pct",
+    "insiders_pct",
+    "prot_traders",
+    "pullback_from_ath_pct",
 }
-BOOL_FEATURES = {"route_ok", "holder_reward_flag", "structure_valid"}
+FRACTION_FEATURES = {"dev_holding_pct", "insiders_pct", "pullback_from_ath_pct"}
+BOOL_FEATURES = {
+    "route_ok",
+    "holder_reward_flag",
+    "structure_valid",
+    "bundle_sol_balances_similar",
+    "bundle_funding_clustered",
+    "launch_candle_single_green",
+    "ca_in_bio",
+    "pinned_post_has_ca",
+}
+ENUM_FEATURES = {
+    "migration_status": {
+        "non_migrated": "non_migrated",
+        "non-migrated": "non_migrated",
+        "not_migrated": "non_migrated",
+        "bonding_curve": "non_migrated",
+        "bonding-curve": "non_migrated",
+        "final_stretch": "final_stretch",
+        "final-stretch": "final_stretch",
+        "new_pair": "new_pair",
+        "new-pair": "new_pair",
+        "new_pairs": "new_pair",
+        "migrated": "migrated",
+        "graduated": "migrated",
+    },
+    "token_type": {
+        "community": "community",
+        "tweet_speculation": "tweet_speculation",
+        "tweet-speculation": "tweet_speculation",
+        "profile_project": "profile_project",
+        "profile-project": "profile_project",
+    },
+    "discussion_quality": {
+        "real_discussion": "real_discussion",
+        "link_spam": "link_spam",
+    },
+    "launchpad": {
+        "pump": "pump",
+        "pump.fun": "pump",
+        "pumpfun": "pump",
+        "meteora": "meteora",
+        "meteora-dlmm": "meteora",
+    },
+}
 AUTHORITY_FEATURES = {"mint_authority", "freeze_authority"}
 
 # Fixed-cost assumption used only to keep the reserve check conservative.
@@ -195,7 +258,22 @@ def _canonicalize_feature(key: str, value: Any) -> Any:
             return UNKNOWN_TEXT
         if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
             return UNKNOWN_TEXT
-        return float(value)
+        number = float(value)
+        if key in FRACTION_FEATURES and not 0 <= number <= 1:
+            return UNKNOWN_TEXT
+        if number < 0:
+            return UNKNOWN_TEXT
+        return number
+    if key in ENUM_FEATURES:
+        if not isinstance(value, str):
+            return UNKNOWN_TEXT
+        token = value.strip().lower().replace(" ", "_")
+        mapped = ENUM_FEATURES[key].get(token)
+        if mapped:
+            return mapped
+        if key == "launchpad" and token:
+            return token
+        return UNKNOWN_TEXT
     if key in BOOL_FEATURES:
         if isinstance(value, bool):
             return value

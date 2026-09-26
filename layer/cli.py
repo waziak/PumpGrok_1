@@ -73,11 +73,23 @@ def cmd_scan(args: argparse.Namespace) -> int:
         return 1
     db = ResearchDB(args.db)
     try:
+        strategy = None
+        if args.strategy:
+            matches = [
+                item
+                for item in load_strategies(Path(args.strategies))
+                if item["strategy_id"] == args.strategy
+            ]
+            if not matches:
+                _print({"ok": False, "error": "unknown_strategy", "strategy": args.strategy})
+                return 1
+            strategy = matches[0]
         result = scan_path(
             db,
             Path(args.input),
             load_thresholds(),
             evaluate_risk=not args.no_risk,
+            strategy=strategy,
         )
     finally:
         db.close()
@@ -160,6 +172,8 @@ def build_parser() -> argparse.ArgumentParser:
     scan = sub.add_parser("scan")
     scan.add_argument("--input", required=True)
     scan.add_argument("--no-risk", action="store_true")
+    scan.add_argument("--strategy")
+    scan.add_argument("--strategies", default=str(REPO_ROOT / "research" / "strategies"))
     scan.set_defaults(func=cmd_scan)
 
     paper = sub.add_parser("paper")

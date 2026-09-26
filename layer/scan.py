@@ -38,11 +38,12 @@ def ingest(
     *,
     evaluate_risk: bool = True,
     now: datetime | None = None,
+    strategy: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     now = now or datetime.now(timezone.utc)
     results = []
     for payload in payloads:
-        results.append(_one(db, payload, thresholds, evaluate_risk=evaluate_risk, now=now))
+        results.append(_one(db, payload, thresholds, evaluate_risk=evaluate_risk, now=now, strategy=strategy))
     ok = all(item.get("ok") for item in results)
     return {"ok": ok, "count": len(results), "results": results, "real_trades": False, "mode": "paper"}
 
@@ -54,6 +55,7 @@ def _one(
     *,
     evaluate_risk: bool,
     now: datetime,
+    strategy: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     candidate, error = normalize_candidate(payload)
     if candidate is None:
@@ -116,22 +118,35 @@ def _one(
                 "override_attempt": candidate["override_attempt"],
             }
         )
+    strategy_note = None
+    if strategy is not None:
+        from layer.strategy import match_strategy
+
+        strategy_note = match_strategy(strategy, candidate["features"], candidate.get("program"))
     return {
         "ok": True,
         "stored": True,
         "candidate_id": candidate["candidate_id"],
         "decision": decision,
         "reasons": reasons,
+        "strategy": strategy_note,
         "traded": False,
     }
 
 
-def scan_path(db: ResearchDB, path: Path, thresholds: Thresholds, *, evaluate_risk: bool = True) -> dict[str, Any]:
+def scan_path(
+    db: ResearchDB,
+    path: Path,
+    thresholds: Thresholds,
+    *,
+    evaluate_risk: bool = True,
+    strategy: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     try:
         payloads = load_payloads(path)
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         return {"ok": False, "error": "malformed_output", "detail": exc.__class__.__name__}
-    return ingest(db, payloads, thresholds, evaluate_risk=evaluate_risk)
+    return ingest(db, payloads, thresholds, evaluate_risk=evaluate_risk, strategy=strategy)
 
 
 def paper_path(

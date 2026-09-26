@@ -27,7 +27,7 @@ from layer.paper import (
 from layer.research_run import run_daily
 from layer.risk import evaluate, normalize_candidate
 from layer.scan import ingest
-from layer.strategy import load_strategies, sanitize_strategy
+from layer.strategy import load_strategies, match_strategy, sanitize_strategy
 
 
 NOW = datetime(2026, 9, 26, 18, 0, tzinfo=timezone.utc)
@@ -397,6 +397,7 @@ class LayerTests(unittest.TestCase):
         ids = {item["strategy_id"] for item in loaded}
         self.assertIn("prebond-volume-regime", ids)
         self.assertIn("narrative-ceiling-exits", ids)
+        self.assertIn("video3-scalping-community-filters", ids)
         for item in loaded:
             self.assertEqual(item["status"], "paper-only")
             self.assertFalse(item["attempted_live_promotion"])
@@ -468,6 +469,99 @@ class LayerTests(unittest.TestCase):
         self.assertFalse(daily["promote_to_live"])
         self.assertFalse(daily["key_material_present"])
         self.assertGreaterEqual(len(daily["hypotheses"]), 2)
+
+    def test_video3_filters_unknown_and_hard_caps(self) -> None:
+        loaded = {
+            item["strategy_id"]: item
+            for item in load_strategies(REPO_ROOT / "research" / "strategies")
+        }
+        strategy = loaded["video3-scalping-community-filters"]
+        self.assertEqual(strategy["claim_status"], "hypothesis")
+        self.assertEqual(strategy["evidence_status"], "hypothesis_not_evidence")
+        self.assertEqual(strategy["attempted_limit_changes"], [])
+        self.assertFalse(strategy["non_binding_research_note"]["binding"])
+        nulls = [item["null_hypothesis"] for item in strategy["hypotheses"]]
+        self.assertGreaterEqual(len(nulls), 7)
+        self.assertTrue(all(isinstance(item, str) and item for item in nulls))
+        opinion = json.dumps(strategy["opinion_vs_measurable"])
+        self.assertIn("100 percent", opinion)
+        self.assertNotIn("MAX_BUY_SOL", json.dumps(strategy["params"]))
+
+        base = {
+            "launchpad": "pump",
+            "migration_status": "new_pair",
+            "market_cap_usd": 9000,
+            "pullback_from_ath_pct": 0.45,
+        }
+        matched = match_strategy(strategy, base, "pump")
+        self.assertTrue(matched["matched"])
+        self.assertIn("token_type", matched["unobserved"])
+        self.assertIn("ca_in_bio", matched["unobserved"])
+        self.assertIn("pinned_post_has_ca", matched["unobserved"])
+
+        self.assertIn("launchpad", match_strategy(strategy, {**base, "launchpad": "meteora"}, "pump")["failed"])
+        self.assertFalse(match_strategy(strategy, {**base, "migration_status": "migrated"}, "pump")["matched"])
+        self.assertIn(
+            "market_cap_usd",
+            match_strategy(strategy, {**base, "market_cap_usd": 5000}, "pump")["failed"],
+        )
+        self.assertIn(
+            "pullback_from_ath_pct",
+            match_strategy(strategy, {**base, "pullback_from_ath_pct": 0.10}, "pump")["failed"],
+        )
+        self.assertIn(
+            "token_type",
+            match_strategy(strategy, {**base, "token_type": "tweet_speculation"}, "pump")["failed"],
+        )
+        self.assertIn(
+            "discussion_quality",
+            match_strategy(strategy, {**base, "discussion_quality": "link_spam"}, "pump")["failed"],
+        )
+        self.assertIn(
+            "ca_in_bio",
+            match_strategy(strategy, {**base, "ca_in_bio": False}, "pump")["failed"],
+        )
+
+        stretch = {
+            "launchpad": "pump",
+            "migration_status": "final_stretch",
+            "market_cap_usd": 9000,
+            "age_minutes": 40,
+            "dev_holding_pct": 0.05,
+            "insiders_pct": 0.20,
+            "prot_traders": 10,
+            "pullback_from_ath_pct": 0.42,
+        }
+        self.assertTrue(match_strategy(strategy, stretch, "pump")["matched"])
+        self.assertIn("age_minutes", match_strategy(strategy, {**stretch, "age_minutes": 50}, "pump")["failed"])
+        self.assertIn("dev_holding_pct", match_strategy(strategy, {**stretch, "dev_holding_pct": 0.08}, "pump")["failed"])
+        self.assertIn("insiders_pct", match_strategy(strategy, {**stretch, "insiders_pct": 0.25}, "pump")["failed"])
+        self.assertIn("prot_traders", match_strategy(strategy, {**stretch, "prot_traders": 9}, "pump")["failed"])
+        missing_traders = dict(stretch)
+        del missing_traders["prot_traders"]
+        unknown_traders = match_strategy(strategy, missing_traders, "pump")
+        self.assertIn("prot_traders", unknown_traders["unknown"])
+        self.assertFalse(unknown_traders["matched"])
+
+        payload = candidate(candidate_id="cand-video3")
+        payload["features"].update(base)
+        stored, error = normalize_candidate(payload)
+        self.assertIsNone(error)
+        self.assertEqual(stored["features"]["ca_in_bio"], "UNKNOWN")
+        self.assertEqual(stored["features"]["pinned_post_has_ca"], "UNKNOWN")
+        self.assertEqual(stored["features"]["discussion_quality"], "UNKNOWN")
+        self.assertEqual(stored["features"]["token_type"], "UNKNOWN")
+        bought = self.engine.buy(payload, now=NOW, strategy=strategy)
+        self.assertTrue(bought["traded"])
+        self.assertEqual(bought["size_sol"], 0.005)
+        self.assertFalse(bought["sent"])
+        entry = float(self.db.get_position(bought["position_id"])["entry_price"])
+        jeet = self.engine.exit(
+            bought["position_id"],
+            {"price_sol": entry * 0.99, "liquidity_sol": 20, "volume_sol_5m": 8, "structure_valid": True},
+        )
+        self.assertTrue(jeet["full"])
+        self.assertEqual(jeet["family"], "fixed_stop")
 
     def _risk(self, **overrides):
         payload = candidate(**overrides)
