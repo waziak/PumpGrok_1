@@ -6,8 +6,11 @@ import argparse
 import os
 from pathlib import Path
 
+import sqlite3
+
 from .config import StopConfig
 from .models import STOP_IS_TRIGGER_NOT_GUARANTEE, StopPosition
+from .profit import ProfitRow, ProfitStore
 from .store import StopStore
 
 
@@ -21,10 +24,49 @@ def default_db_path() -> Path:
     return Path(desk) / "state" / "stop_loss.sqlite"
 
 
-def render_status(config: StopConfig, positions: list[StopPosition]) -> str:
+def _mcap(value: float | None) -> str:
+    if value is None:
+        return "n/a"
+    return f"{value:.0f}"
+
+
+def format_research(pos: StopPosition, row: ProfitRow) -> str:
+    entry = pos.entry_fill_price
+    price = pos.last_mark_price if pos.last_mark_price is not None else entry
+    unrealized = (price - entry) * pos.remaining_tokens
+    remaining_pct = pos.remaining_tokens / pos.size_tokens * 100.0 if pos.size_tokens else 0.0
+    distance = row.trail_distance_pct
+    distance_s = "n/a" if distance is None else f"{distance:.1f}%"
+    narrative = row.narrative or "(none)"
+    return "\n".join((
+        (
+            f"entry_mcap={_mcap(row.entry_mcap)} current_mcap={_mcap(row.current_mcap)} "
+            f"ath_mcap={_mcap(row.ath_mcap)}"
+        ),
+        (
+            f"realized={row.realized_pnl:.4f} unrealized={unrealized:.4f} "
+            f"remaining_pct={remaining_pct:.2f}"
+        ),
+        row.trend_evidence,
+        (
+            f"regime={row.regime} stall={str(row.stall).lower()} "
+            f"breakout={str(row.breakout).lower()}"
+        ),
+        f"next_action={row.next_action}",
+        f"trailing_stop={pos.current_stop_price:.4f} trail_distance={distance_s}",
+        f"narrative_context={narrative} (not a decision input)",
+    ))
+
+
+def render_status(
+    config: StopConfig,
+    positions: list[StopPosition],
+    research: dict[str, ProfitRow] | None = None,
+) -> str:
     mode = config.trading_mode if config.trading_mode in ("paper", "live") else "paper"
     lines = [
         f"TRADING_MODE={mode}",
+        "CURRENT MODE=PAPER" if mode == "paper" else f"CURRENT MODE={mode.upper()}",
         "PRIVATE KEY EXPOSED=NO",
         "REAL TRADES=NO",
         "LIVE READY=FAIL",
@@ -52,7 +94,29 @@ def render_status(config: StopConfig, positions: list[StopPosition]) -> str:
         lines.append(
             f"{pos.symbol} {entry:.4f} {cur_s} {pnl_s} {stop:.4f} {dist_s} {trailing} {pos.stop_state}"
         )
+        row = None if research is None else research.get(pos.position_id)
+        if row is not None:
+            lines.append(format_research(pos, row))
     return "\n".join(lines)
+
+
+def read_research(path: Path) -> dict[str, ProfitRow]:
+    if not path.exists():
+        return {}
+    conn = sqlite3.connect(path)
+    try:
+        found = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='profit_positions'"
+        ).fetchone()
+        if found is None:
+            return {}
+    finally:
+        conn.close()
+    store = ProfitStore(path)
+    try:
+        return {row.position_id: row for row in store.all_rows()}
+    finally:
+        store.close()
 
 
 def load_status(path: Path | None = None, config: StopConfig | None = None) -> str:
@@ -62,9 +126,10 @@ def load_status(path: Path | None = None, config: StopConfig | None = None) -> s
         return render_status(cfg, [])
     store = StopStore(db)
     try:
-        return render_status(cfg, store.load_active())
+        positions = store.load_active()
     finally:
         store.close()
+    return render_status(cfg, positions, read_research(db))
 
 
 def main(argv: list[str] | None = None) -> int:

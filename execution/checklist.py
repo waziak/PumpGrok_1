@@ -10,7 +10,7 @@ def main() -> int:
     import pytest
 
     root = Path(__file__).resolve().parents[1]
-    suite = root / "tests" / "test_stop_loss_engine.py"
+    suite = root / "tests"
     return int(pytest.main(["-q", str(suite)]))
 
 

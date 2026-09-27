@@ -363,6 +363,71 @@ class StopEngine:
         self.save(pos, moment)
         return pos
 
+    def tighten_stop(
+        self,
+        position_id: str,
+        new_stop_price: float,
+        *,
+        actor: str,
+        reason: str,
+        now: float | None = None,
+    ) -> StopPosition:
+        """Raise a stop. A lower price is ignored so the trail cannot loosen."""
+        if actor != "profit-engine":
+            raise StopProtectionError("only the profit engine may tighten a stop")
+        pos = self.get(position_id)
+        moment = self._now(now)
+        if pos.stop_state != StopState.OPEN:
+            return pos
+        if new_stop_price <= pos.current_stop_price + 1e-12:
+            return pos
+        pos.current_stop_price = qprice(new_stop_price)
+        if pos.current_stop_price >= pos.entry_fill_price:
+            pos.break_even_active = True
+        self.log_event(
+            position_id,
+            "STOP_TIGHTENED",
+            {"stop": pos.current_stop_price, "reason": reason},
+            moment,
+        )
+        self.save(pos, moment)
+        return pos
+
+    def close_for_trend_breakdown(
+        self,
+        position_id: str,
+        fill_price: float,
+        *,
+        actor: str,
+        now: float | None = None,
+    ) -> float:
+        """Flatten a runner after confirmed trend breakdown. Not a profit target."""
+        if actor != "profit-engine":
+            raise StopProtectionError("only the profit engine may close for trend breakdown")
+        pos = self.get(position_id)
+        moment = self._now(now)
+        if pos.stop_state != StopState.OPEN:
+            raise StopProtectionError("trend breakdown close is only valid while OPEN")
+        sold = pos.remaining_tokens
+        if sold <= 0:
+            return 0.0
+        pos.remaining_tokens = 0.0
+        pos.stop_state = StopState.CLOSED
+        pos.stop_reason = StopReason.TREND_BREAKDOWN
+        pos.closed_at = iso(moment)
+        pos.exit_quote_price = qprice(fill_price)
+        pos.exit_actual_fill_price = qprice(fill_price)
+        pos.last_mark_price = qprice(fill_price)
+        pos.last_mark_at = iso(moment)
+        self.log_event(
+            position_id,
+            StopReason.TREND_BREAKDOWN,
+            {"tokens_sold": sold, "fill_price": fill_price},
+            moment,
+        )
+        self.save(pos, moment)
+        return sold
+
     def on_mark(self, view: MarketView, now: float | None = None) -> Decision:
         """Apply one mark. Does not call an LLM and does not send an order."""
         pos = self.get(view.position_id)

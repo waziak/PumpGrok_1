@@ -1,4 +1,4 @@
-"""Path setup and the stop-loss checklist printed after the suite."""
+"""Path setup and the stop-loss plus profit checklists printed after the suite."""
 
 from __future__ import annotations
 
@@ -48,7 +48,62 @@ GROUPS = {
         "test_private_key_not_exposed",
         "test_paper_sim_rejects_buy_without_stop",
     ],
+    "STAGED PROFIT ENGINE": [
+        "test_profit_stages_leave_a_runner",
+        "test_profit_no_sell_all_at_plus_50_or_mcap_ceiling",
+        "test_profit_partials_are_debounced",
+        "test_profit_peak_drawdown_partial_not_flatten",
+        "test_profit_hard_stop_beats_partial",
+    ],
+    "TREND STATE ENGINE": [
+        "test_trend_components_are_visible",
+        "test_trend_unknown_without_measurements",
+        "test_grok_narrative_is_not_authority",
+        "test_trend_breakdown_exits_runner_after_debounce",
+    ],
+    "MARKET CAP REGIME ENGINE": [
+        "test_regime_context_does_not_exit",
+    ],
+    "STALL DETECTION": [
+        "test_stall_at_50k",
+    ],
+    "BREAKOUT DETECTION": [
+        "test_breakout_50k_to_200k",
+    ],
+    "RUNNER MODE": [
+        "test_runner_to_1m",
+    ],
+    "ADAPTIVE TRAILING STOP": [
+        "test_adaptive_trail_never_loosens",
+    ],
+    "PRINCIPAL RECOVERY": [
+        "test_principal_recovery",
+    ],
+    "COUNTERFACTUAL TRACKING": [
+        "test_counterfactual_tracking",
+    ],
 }
+
+NEW_TESTS = [
+    "test_profit_stages_leave_a_runner",
+    "test_profit_no_sell_all_at_plus_50_or_mcap_ceiling",
+    "test_profit_partials_are_debounced",
+    "test_profit_peak_drawdown_partial_not_flatten",
+    "test_profit_hard_stop_beats_partial",
+    "test_trend_components_are_visible",
+    "test_trend_unknown_without_measurements",
+    "test_grok_narrative_is_not_authority",
+    "test_trend_breakdown_exits_runner_after_debounce",
+    "test_regime_context_does_not_exit",
+    "test_stall_at_50k",
+    "test_breakout_50k_to_200k",
+    "test_runner_to_1m",
+    "test_adaptive_trail_never_loosens",
+    "test_principal_recovery",
+    "test_counterfactual_tracking",
+    "test_profit_status_shows_research",
+    "test_profit_paper_mode_only",
+]
 
 _results: dict[str, bool] = {}
 
@@ -63,11 +118,23 @@ def pytest_runtest_makereport(item, call):
         _results[item.name] = False
 
 
+STOP_GROUP_NAMES = (
+    "STOP LOSS ENGINE",
+    "HARD EMERGENCY STOP",
+    "TRAILING STOP",
+    "RESTART RECOVERY",
+    "STOP RETRY",
+    "PAPER STOP TEST",
+)
+
+
+def _group_line(name: str, tests: list[str], results: dict[str, bool]) -> str:
+    ok = all(results.get(test) is True for test in tests)
+    return f"{name}: {'PASS' if ok else 'FAIL'}"
+
+
 def checklist_lines(results: dict[str, bool]) -> list[str]:
-    lines = []
-    for name, tests in GROUPS.items():
-        ok = all(results.get(test) is True for test in tests)
-        lines.append(f"{name}: {'PASS' if ok else 'FAIL'}")
+    lines = [_group_line(name, GROUPS[name], results) for name in STOP_GROUP_NAMES]
     private_key = "NO" if results.get("test_private_key_not_exposed") is True else "YES"
     real_trades = "NO" if results.get("test_live_sends_disabled") is True else "YES"
     lines.append(f"PRIVATE KEY EXPOSED={private_key}")
@@ -86,8 +153,26 @@ def checklist_lines(results: dict[str, bool]) -> list[str]:
     return lines
 
 
+def profit_checklist_lines(results: dict[str, bool]) -> list[str]:
+    lines = [
+        _group_line(name, tests, results)
+        for name, tests in GROUPS.items()
+        if name not in STOP_GROUP_NAMES
+    ]
+    passed = sum(1 for name in NEW_TESTS if results.get(name) is True)
+    lines.append(f"NEW TESTS {passed}/{len(NEW_TESTS)}")
+    paper_ok = results.get("test_profit_paper_mode_only") is True
+    live_blocked = results.get("test_live_sends_disabled") is True
+    lines.append(f"REAL TRADES {'NO' if paper_ok and live_blocked else 'YES'}")
+    lines.append(f"CURRENT MODE {'PAPER' if paper_ok else 'FAIL'}")
+    return lines
+
+
 def pytest_terminal_summary(terminalreporter, exitstatus, config):
     del exitstatus, config
     terminalreporter.write_sep("-", "stop-loss checklist")
     for line in checklist_lines(_results):
+        terminalreporter.write_line(line)
+    terminalreporter.write_sep("-", "profit checklist")
+    for line in profit_checklist_lines(_results):
         terminalreporter.write_line(line)

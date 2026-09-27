@@ -4,6 +4,6 @@
   "description": "Paper status and stop-loss checks. Live network sends are not wired.",
   "scripts": {
     "status": "python3 tools/stop_status.py",
-    "test:stops": "python3 -m pytest tests/test_stop_loss_engine.py -q"
+    "test:stops": "python3 -m pytest tests -q"
   }
 }
