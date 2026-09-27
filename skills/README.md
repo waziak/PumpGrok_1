@@ -1,6 +1,6 @@
 # Skills
 
-Twenty-three portable skills that define how the PumpGrok desk operates.
+Twenty-four portable skills that define how the PumpGrok desk operates.
 
 ## Core / Bootstrap
 | Skill | Purpose | Primary users |
@@ -21,6 +21,7 @@ Twenty-three portable skills that define how the PumpGrok desk operates.
 | desk-post-trade-review | Journal and process grades | CHIEF, EXIT |
 | desk-incident-response | Playbooks for failures and rugs | CHIEF, all |
 | desk-strategy-lab | Paper rules and strategy experiments | CHIEF |
+| research-paper-layer | SQLite research, deterministic risk, paper fills; live execution disabled | all eight roles |
 
 ## Domain
 | Skill | Purpose | Primary users |

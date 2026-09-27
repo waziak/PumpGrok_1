@@ -5,6 +5,7 @@ Validation and helper scripts for the PumpGrok repository.
 | Script | Purpose |
 |--------|---------|
 | `check.sh` | Lints frontmatter, agent definitions, skill structure, security constitution presence, one-writer conventions, and the Hermes cron pack. No network required. |
+| `security_audit.py` | Fails if populated key material is found. Prints `PRIVATE KEY EXPOSED: NO` when the tree is clean. |
 | `hermes-bootstrap.sh` | Create eight isolated Hermes profiles (`HERMES_HOME` per role) and the shared `trading-desk` file bus. Does not clone default-profile memory or tokens. |
 | `hermes-install-cron.sh` | Install scout/risk/chief/rug cron jobs. Refuses SNIPER/EXIT owners. |
 | `hermes-verify-isolation.sh` | Check profile isolation, forbidden env keys, file-bus layout, and desk_state.py. |

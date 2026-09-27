@@ -2,20 +2,22 @@
 
 ![PumpGrok banner](banner.jpg)
 
-PumpGrok is an eight-role Solana memecoin trading desk packaged as agent instructions, 23 skills, a hard security constitution, and read-only Python helpers. It is loaded into a host agent runtime (Grok Bot, Cursor, Claude Code, or Grok Build). It is not a trading bot, exchange client, or signer: private keys never enter the system, and only a human-approved ticket may be sent.
+PumpGrok is an eight-role Solana memecoin trading desk packaged as agent instructions, 24 skills, a hard security constitution, and read-only Python helpers. It is loaded into a host agent runtime (Grok Bot, Cursor, Claude Code, or Grok Build). Agents are not signers: they emit structured trade-candidate JSON only. A separate `execution/` package can sign locally and is disabled by default (`TRADING_MODE=paper`). Private keys never enter agents, prompts, skills, SQLite, or git.
 
 Version 1.0.0.
 
 ## Capabilities
 
 - Eight specialist roles: CHIEF, SCOUT, RISK, WHALE, SNIPER, RUG, EXIT, SHILL (`agents/`)
-- 23 skills covering desk constitution, ticket lifecycle, risk audit, Jupiter routing, discovery, journal conventions, and a vendored dry-run screening engine (`skills/grokbot-pipeline`)
+- 24 skills covering desk constitution, ticket lifecycle, risk audit, Jupiter routing, discovery, journal conventions, the paper research loop (`skills/research-paper-layer`), and a vendored dry-run screening engine (`skills/grokbot-pipeline`)
+- SQLite research store and deterministic paper engine (`python -m layer`, also `npm run research|scan|paper|status`)
+- Disabled local execution package (`execution/`, `npm run live` refuses by default)
 - Always-on desk rule `rules/pumpgrok-team.mdc` (RISK veto, human approval by ticket ID, single-send, no private keys)
 - Read-only CLI helpers for Jupiter quotes, mint/freeze authority, priority fees, ticket IDs, paper fills, holder concentration, and pipeline JSONL evidence (`tools/pipeline_evidence.py`)
 - Repo linter `scripts/check.sh` (frontmatter, constitution phrases, one-writer convention; no network)
 - Plugin manifests for Grok Bot (`plugin.json`), Claude Code (`.claude-plugin/`), Cursor (`.cursor-plugin/`), and Grok Build (`.grok-plugin/`)
 
-The desk starts in **research** mode. **paper** logs simulated fills via `tools/paper_sim.py`. **micro-live** is only enabled after the risk-limits interview and explicit user confirmation. The desk ships no strategies and makes no return claims.
+The desk starts in **research** mode. **paper** logs simulated fills via `tools/paper_sim.py` and `python -m layer paper`. **micro-live** is only enabled after the risk-limits interview and explicit user confirmation. This fork does not enable live trading. Hypotheses under `research/strategies/` are not proof and are not return claims.
 
 ## Requirements
 
@@ -59,6 +61,47 @@ python tools/paper_sim.py --action buy --ticket SOL-20260827-001 \
 
 Working files for a live desk belong under `/workspace/trading-desk/` (created by setup), not inside this repo. `tools/ticket_helper.py` falls back to `./trading-desk/proposals` when `/workspace` is absent.
 
+Paper research from this fork:
+
+```bash
+python -m layer status
+python -m layer scan --input path/to/candidates.json
+python -m layer research --out research/daily/2026-09-26.json
+npm test
+npm run live   # refuses; does not trade
+```
+
+`research/strategies/` holds paper hypotheses, not proof. Hard caps stay at 0.005 SOL per buy, 0.03 SOL exposure, and a 0.02 SOL reserve.
+
+## Going live
+
+Defaults refuse every network send. `npm run bot` keeps paper trading with no LLM key and does not read a keypair. `npm run live` prints the gate and exits without signing or broadcasting, including when the gate is open.
+
+Pump bonding-curve `buy_exact_quote_in_v2` / `sell_v2` and PumpSwap `buy_exact_quote_in` / `sell` are assembled with full account metas in `execution/venues.ts`. `runControlled` in `execution/controlled.ts` is the only broadcast path: risk, plan, simulate, local sign from `SOLANA_KEYPAIR_PATH`, then RPC or Jito. It sends only when `TRADING_MODE=live` and `LIVE_NETWORK_SEND=true`. An expired blockhash is not sent. An uncertain signature is not retried. Jupiter execute is not called.
+
+To broadcast after you choose to, on a machine that is not this repo:
+
+1. Fund `2LmzxcxCfijZANvbiDrf8DcVRgUqY6PFwfB7wPVbsXCp`. One buy needs at least 0.029 SOL in that wallet: 0.02 `MIN_SOL_RESERVE`, plus 0.005 `MAX_BUY_SOL`, plus about 0.00391 SOL for the signature, an ATA rent exemption, and the user-volume account rent. Extra SOL does not raise the caps. `MAX_TOTAL_EXPOSURE_SOL` stays 0.03. `PAPER_BUY_SOL` stays 0.005.
+2. Point `SOLANA_KEYPAIR_PATH` at the keypair file. The variable is a filesystem path. Do not put the key, seed, or mnemonic in the environment, the repo, or a prompt.
+3. Set `TRADING_MODE=live` and `LIVE_NETWORK_SEND=true` together. Either one alone still refuses a broadcast.
+4. Leave the hard caps at the values in `config/hard-caps.json`. Strategies and reviews cannot raise them.
+
+The paper loop does not call `runControlled`. Do not set those two flags in committed defaults.
+
+## Live bot
+
+`npm run live-bot` scans the same public Pump and PumpSwap sources as the paper bot, then asks the Python layer to qualify with `qualify_only` (no paper fill). Only a FAST strategy pass that also clears the risk veto can become a buy. `npm run bot` stays paper-only and does not import this loop.
+
+With the default environment the live bot still refuses to send. It writes `data/live-status.json` and appends `data/live-events.jsonl`, and serves a scope and trade view at `http://127.0.0.1:8787/` (`LIVE_VIEW=0` turns the view off, `LIVE_VIEW_PORT` changes the port).
+
+To broadcast a micro buy from that loop, fund the wallet as above, set `SOLANA_KEYPAIR_PATH`, and export both `TRADING_MODE=live` and `LIVE_NETWORK_SEND=true` in the shell. Then:
+
+```bash
+npm run live-bot
+```
+
+The loop uses `SOLANA_RPC_URL` for `getLatestBlockhash`, `simulateTransaction`, `sendRawTransaction` (`maxRetries` 0), and `getSignatureStatuses`. It does not print key material. One buy stays at or under 0.005 SOL. Stop the process with Ctrl-C. `npm run live` remains a gate check and does not start this loop.
+
 Cursor / Claude Code / Grok Build load `skills/`, `agents/`, and `rules/` from the plugin manifests. On runtimes without persistent Bots, `rules/pumpgrok-team.mdc` says to use subagents or role-labelled passes.
 
 ## Project layout
@@ -69,7 +112,11 @@ Cursor / Claude Code / Grok Build load `skills/`, `agents/`, and `rules/` from t
 | `skills/` | Twenty-three `SKILL.md` procedures |
 | `rules/` | Always-applied desk constitution (`pumpgrok-team.mdc`) |
 | `tools/` | Read/prepare-only Python CLIs (JSON on stdout; never sign or send), including the JSONL desk bridge `tools/pipeline_evidence.py` |
-| `scripts/` | `check.sh` repository linter |
+| `layer/` | Research SQLite, deterministic risk gate, paper engine, CLIs (`research`, `scan`, `paper`, `status`) |
+| `execution/` | Local execution package. Built, disabled by default, no network send from `npm run live` |
+| `research/` | Paper hypotheses, proposal scaffold, daily research |
+| `config/` | Hard SOL caps and default risk thresholds |
+| `scripts/` | `check.sh` repository linter and `security_audit.py` |
 | `vendor/grokbot-pumpfun/` | In-tree vendored screening pipeline (regular files, not a git submodule or gitlink; pin `409e74c905faa0e9de42e918efe2c604f206856e`); notes in `vendor/grokbot-pumpfun/PUMPGROK.md`; desk-facing procedure in `skills/grokbot-pipeline` |
 | `plugin.json` | Root agent-plugins manifest |
 | `.claude-plugin/`, `.cursor-plugin/`, `.grok-plugin/` | Host-specific plugin metadata |

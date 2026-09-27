@@ -12,6 +12,8 @@ PumpGrok turns a host agent runtime into an eight-role Solana memecoin trading d
 | `skills/*/SKILL.md` | Named procedures the host loads by frontmatter `name` | A framework or SDK |
 | `rules/pumpgrok-team.mdc` | Always-applied constitution (`alwaysApply: true`) | Runtime enforcement code |
 | `tools/*.py` | Fail-closed JSON CLIs | Signers, senders, or wallets |
+| `layer/` | SQLite research store, deterministic risk gate, paper engine | A live sender |
+| `execution/` | Local plan, receipt, and gate code | Enabled live trading |
 | `vendor/grokbot-pumpfun/` | Vendored third-party screening engine (dry-run default; pinned upstream commit) | Part of the instruction pack; it never signs or sends |
 | Plugin manifests | How Cursor / Claude Code / Grok Build / Grok Bot discover the pack | A deployable service |
 
@@ -29,7 +31,7 @@ External systems named in skills or tools:
 | Browser sites (tool-connections / discovery) | X / Twitter, pump.fun, gmgn.ai, jupiter.ag, Photon / Axiom, solscan.io, rugcheck.xyz — opened by the human/host browser, not by these Python tools |
 | x.ai Grok API, pump.fun frontend REST, PumpPortal WS | Called only by operator-run processes of the vendored `vendor/grokbot-pumpfun` engine (see `skills/grokbot-pipeline`); never by `tools/*.py` |
 
-No database, message bus, or secrets manager is referenced. Tools take no API keys. There are no `os.environ` / `.env` readers in the instruction pack's own files; the vendored `vendor/grokbot-pumpfun` component keeps its own `GROKBOT_*` environment contract outside PumpGrok and desk files.
+The instruction-pack tools take no API keys. The research layer (`layer/`) keeps a local SQLite file and reads non-secret caps from the environment. It does not read a keypair file. The vendored `vendor/grokbot-pumpfun` component keeps its own `GROKBOT_*` environment contract outside PumpGrok and desk files. `.env.example` documents `SOLANA_KEYPAIR_PATH` as a filesystem path only.
 
 ```mermaid
 flowchart LR
@@ -63,6 +65,8 @@ Nothing in this repo is started as a service.
 |---------|-------------------|----------------|
 | Host agent | Operator opens the repo / installs the plugin | Loads agents, skills, and rules; talks on the Trading Floor; may invoke tools |
 | `python tools/*.py` | One-shot CLI from the repo root | Structured reads / paper journal appends |
+| `python -m layer` | One-shot CLI from the repo root | Research ingest, deterministic risk, paper fills |
+| `npm run live` | One-shot | Refuses by default. Does not broadcast |
 | `./scripts/check.sh` | One-shot from the repo root | Offline lint of instruction files |
 | Vendor engine dry-run screen | Operator-run process from `vendor/grokbot-pumpfun`, procedure in `skills/grokbot-pipeline` | Appends screening-evidence JSONL only; signs nothing, sends nothing (`mode: live` is an upstream stub) |
 | Human wallet (throwaway, outside this repo) | Screen hand-off only (`tool-connections`) | Actual signing; never handled by PumpGrok files |
@@ -172,9 +176,15 @@ Tool-level errors: HTTP/RPC exceptions become `{"ok": false, "error": ...}` JSON
 
 Engagement levels (`desk-operating-model`): **research** (no money), **paper** (`paper_sim.py`), **micro-live** (throwaway wallet after explicit confirmation). Daily loss ≥ 5% of wallet equity → CHIEF posts `FLOOR HALTED – DAILY LOSS LIMIT` and refuses new entries until the human resets.
 
+## Research and paper layer
+
+`layer/` is stdlib Python. Agents do not import it to sign. Flow: JSON candidate, feature rows (missing values stored as UNKNOWN), deterministic `layer/risk.py` REJECT or PASS, then `layer/paper.py` simulated buy or exit. CHIEF text cannot flip a REJECT. Hard caps live in code and `config/hard-caps.json` and cannot be raised. Paper costs include a slippage assumption, a 100 bps pump-fee assumption (live Pump fees are dynamic), a network fee, a priority fee, and a Jito tip that is not sent.
+
+`execution/` is TypeScript (wallet, risk-engine, transaction-builder, jito, positions, receipts). It plans a Jupiter Swap V2 build or a Pump / PumpSwap buy and does not call Jupiter execute or Jito `sendBundle` from `npm run live`. The live gate stays closed unless `TRADING_MODE=live` and both confirmation variables are set. Even then the CLI binds no network transport. Tests inject failing RPC and Jito transports. No real transactions.
+
 ## Persistence
 
-No database, migrations, or cache layer.
+Desk journals still live outside git under `/workspace/trading-desk/`. The research layer adds a local SQLite file (default `data/pumpgrok-research.sqlite`, gitignored) with candidates, candidate_features, agent_reviews, risk_decisions, paper_trades, positions, trade_exits, execution_receipts, daily_research, and strategy_versions.
 
 Desk files live **outside** the git tree, conventionally:
 
@@ -207,7 +217,7 @@ This repository itself stores instruction files, plugin JSON, Python helpers, th
 | Risk numbers | `/workspace/trading-desk/risk-limits.md` from the RISK/CHIEF interview |
 | `GROKBOT_*` environment variables | Vendored engine only (`vendor/grokbot-pumpfun`, e.g. `GROKBOT_GROK_API_KEY`); never stored in PumpGrok or trading-desk files |
 
-Do not put seed phrases, private keys, or live RPC credentials in git. Connection is screen hand-off; only the public address is recorded. Tools do not read environment variables.
+Do not put seed phrases, private keys, or live RPC credentials in git. Connection for desk agents is screen hand-off; only the public address is recorded. `tools/*.py` do not read environment variables. `layer/` reads cap overrides and `TRADING_MODE` only, and it forces paper mode. `execution/` reads `SOLANA_KEYPAIR_PATH` only after the live gate opens, which the default CLI does not do.
 
 ## Cross-cutting
 

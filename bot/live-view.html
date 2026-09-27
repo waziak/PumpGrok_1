@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>PumpGrok live</title>
+  <style>
+    body { margin: 0; font: 14px/1.4 ui-sans-serif, system-ui, sans-serif; background: #10140f; color: #e7f0df; }
+    header, main { padding: 16px 20px; }
+    h1 { font-size: 18px; margin: 0 0 8px; }
+    .meta { color: #b7c7ae; }
+    table { width: 100%; border-collapse: collapse; margin: 12px 0 24px; }
+    th, td { text-align: left; border-bottom: 1px solid #2a3326; padding: 6px 8px; vertical-align: top; }
+    th { color: #9eb396; font-weight: 600; }
+    .pass { color: #b6e38a; }
+    .reject { color: #e7b4a2; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>PumpGrok live scope</h1>
+    <div class="meta" id="meta">waiting for a cycle</div>
+  </header>
+  <main>
+    <h2>Scope</h2>
+    <table><thead><tr><th>Mint</th><th>Strategy</th><th>Decision</th><th>Reasons</th></tr></thead><tbody id="scope"></tbody></table>
+    <h2>Positions</h2>
+    <table><thead><tr><th>Mint</th><th>Size SOL</th><th>Status</th><th>Signature</th></tr></thead><tbody id="positions"></tbody></table>
+    <h2>Trades</h2>
+    <table><thead><tr><th>Time</th><th>Mint</th><th>Sent</th><th>Error</th><th>Signature</th></tr></thead><tbody id="trades"></tbody></table>
+    <h2>Events</h2>
+    <table><thead><tr><th>Type</th><th>Mint</th><th>Sent</th><th>Detail</th></tr></thead><tbody id="events"></tbody></table>
+  </main>
+  <script>
+    function cell(text) {
+      const td = document.createElement("td");
+      td.textContent = text == null || text === "" ? "" : String(text);
+      return td;
+    }
+    function fill(id, rows, build) {
+      const body = document.getElementById(id);
+      body.replaceChildren();
+      for (const row of rows) body.appendChild(build(row));
+    }
+    async function tick() {
+      const response = await fetch("/api/status");
+      if (!response.ok) return;
+      const status = await response.json();
+      const meta = document.getElementById("meta");
+      meta.textContent = [
+        "cycle " + status.cycle,
+        "mode " + status.mode,
+        "send " + (status.live_send_enabled ? "open" : "closed"),
+        "balance " + status.balance_lamports + " lamports",
+        "exposure " + status.open_exposure_sol + " SOL",
+        status.signal || "",
+      ].join(" | ");
+      fill("scope", status.scope || [], (row) => {
+        const tr = document.createElement("tr");
+        tr.append(cell(row.symbol ? row.symbol + " " + row.mint : row.mint), cell(row.strategy_id), cell(row.decision), cell((row.reasons || []).join(", ")));
+        tr.children[2].className = row.decision === "PASS" ? "pass" : "reject";
+        return tr;
+      });
+      fill("positions", status.positions || [], (row) => {
+        const tr = document.createElement("tr");
+        tr.append(cell(row.mint), cell(row.size_sol), cell(row.status), cell(row.signature));
+        return tr;
+      });
+      fill("trades", status.trades || [], (row) => {
+        const tr = document.createElement("tr");
+        tr.append(cell(row.at), cell(row.mint), cell(row.sent), cell(row.error), cell(row.signature));
+        return tr;
+      });
+      const eventsResponse = await fetch("/api/events");
+      if (!eventsResponse.ok) return;
+      const lines = (await eventsResponse.text()).trim().split("\n").filter(Boolean).slice(-20);
+      const events = [];
+      for (const line of lines) {
+        try { events.push(JSON.parse(line)); } catch { /* skip a partial line */ }
+      }
+      fill("events", events.reverse(), (row) => {
+        const tr = document.createElement("tr");
+        const detail = row.reasons || row.missing || row.error || row.signature || "";
+        tr.append(cell(row.type), cell(row.mint), cell(row.sent), cell(Array.isArray(detail) ? detail.join(", ") : detail));
+        return tr;
+      });
+    }
+    tick();
+    setInterval(tick, 2000);
+  </script>
+</body>
+</html>

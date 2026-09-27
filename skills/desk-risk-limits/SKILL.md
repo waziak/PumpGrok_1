@@ -21,3 +21,5 @@ Write `/workspace/trading-desk/risk-limits.md` with the agreed numbers.
 - RISK must refuse any ticket that violates these limits
 - CHIEF must check daily loss before allowing new tickets
 - Any change requires new human confirmation
+- The interview cannot weaken code caps: MAX_BUY_SOL=0.005, MAX_TOTAL_EXPOSURE_SOL=0.03, MIN_SOL_RESERVE=0.02, PAPER_BUY_SOL=0.005
+- CHIEF cannot override a deterministic REJECT or a RISK veto
