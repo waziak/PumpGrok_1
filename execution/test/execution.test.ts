@@ -233,7 +233,8 @@ test("broadcast requires live mode and LIVE_NETWORK_SEND=true", () => {
   const described = describeLive(openEnv());
   assert.equal(described.sent, false);
   assert.equal(described.signed, false);
-  assert.equal(described.wireReady, false);
+  assert.equal(described.wireReady, true);
+  assert.equal(described.transactionBuild, "wire_ready");
   assert.equal(described.liveSendDisabled, true);
 });
 

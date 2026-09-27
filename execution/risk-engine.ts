@@ -97,7 +97,9 @@ export function evaluateExecutionRisk(input: {
   if (size !== null && input.openExposureSol + size - HARD_CAPS.MAX_TOTAL_EXPOSURE_SOL > 1e-12) {
     reasons.push("excess_exposure");
   }
-  const fee = (5_000 + 10_000 + 10_000) / 1_000_000_000;
+  // Signature, priority, one ATA rent, and the pump user-volume account rent.
+  // The hard caps above are unchanged. This buffer only keeps the reserve intact.
+  const fee = (5_000 + 20_000 + 2_039_280 + 1_844_400) / 1_000_000_000;
   if (input.walletSol === null) reasons.push("sol_reserve");
   else if (size !== null && input.walletSol - size - fee < HARD_CAPS.MIN_SOL_RESERVE) reasons.push("sol_reserve");
 

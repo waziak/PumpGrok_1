@@ -6,7 +6,7 @@
 import { createPrivateKey, sign as cryptoSign } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 
-import { liveGate } from "./gate.ts";
+import { signGate } from "./gate.ts";
 
 const PKCS8_PREFIX = Buffer.from("302e020100300506032b657004220420", "hex");
 
@@ -48,12 +48,16 @@ export function loadPublicPreview(keypairPath: string | undefined): { ok: true; 
   return { ok: true, bytes: 64 };
 }
 
+export type SignedTransaction =
+  | { ok: true; transactionB64: string; signed: true; secretMaterialExposed: false }
+  | WalletError;
+
 export function signMessage(
   keypairPath: string | undefined,
   message: Uint8Array,
   env: Record<string, string | undefined>,
 ): SignResult {
-  const gate = liveGate(env);
+  const gate = signGate(env);
   if (!gate.open) return refuse("sign_refused");
   const preview = loadPublicPreview(keypairPath);
   if (!preview.ok) return preview;
@@ -84,4 +88,22 @@ export function signMessage(
     secret.fill(0);
     seed.fill(0);
   }
+}
+
+export function signTransaction(
+  keypairPath: string | undefined,
+  message: Uint8Array,
+  env: Record<string, string | undefined>,
+): SignedTransaction {
+  const signed = signMessage(keypairPath, message, env);
+  if (!signed.ok) return signed;
+  const signature = Buffer.from(signed.signatureB64, "base64");
+  if (signature.length !== 64) return refuse("malformed_keypair");
+  const tx = Buffer.concat([Buffer.from([1]), signature, Buffer.from(message)]);
+  return {
+    ok: true,
+    transactionB64: tx.toString("base64"),
+    signed: true,
+    secretMaterialExposed: false,
+  };
 }

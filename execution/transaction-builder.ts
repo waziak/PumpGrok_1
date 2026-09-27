@@ -8,8 +8,7 @@
  * Pump bonding curve: 6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P
  * PumpSwap AMM: pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA
  * Pump fees: pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ
- * buy_v2 takes amount and max quote cost. Account lists change; this file
- * records the plan and does not assemble a claim of a valid on-chain ix.
+ * This file checks size, age, and slippage. Account metas are assembled in venues.ts.
  */
 
 import { HARD_CAPS } from "./risk-engine.ts";
@@ -79,14 +78,14 @@ export function buildPlan(input: {
     liveSend: false,
     program,
     programId,
-    instruction: programId === PROGRAM_IDS.pumpswap ? "buy" : programId === null ? "jupiter-build" : "buy_v2",
+    instruction: programId === PROGRAM_IDS.pumpswap ? "buy_exact_quote_in" : programId === null ? "jupiter-build" : "buy_exact_quote_in_v2",
     amountLamports: lamports,
     maxSolCostLamports,
     slippageBps: input.slippageBps,
     jupiter: JUPITER,
     wireReady: false,
     notes: [
-      "Plan only. Account metas for Pump buy_v2 and PumpSwap buy are not assembled here.",
+      "Size plan only. Pump and PumpSwap account metas are assembled in venues.ts.",
       "Jupiter /swap/v2/execute is not called. Jito sendBundle is not called by the builder.",
     ],
   };

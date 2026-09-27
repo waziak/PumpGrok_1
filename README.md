@@ -73,6 +73,21 @@ npm run live   # refuses; does not trade
 
 `research/strategies/` holds paper hypotheses, not proof. Hard caps stay at 0.005 SOL per buy, 0.03 SOL exposure, and a 0.02 SOL reserve.
 
+## Going live
+
+Defaults refuse every network send. `npm run bot` keeps paper trading with no LLM key and does not read a keypair. `npm run live` prints the gate and exits without signing or broadcasting, including when the gate is open.
+
+Pump bonding-curve `buy_exact_quote_in_v2` / `sell_v2` and PumpSwap `buy_exact_quote_in` / `sell` are assembled with full account metas in `execution/venues.ts`. `runControlled` in `execution/controlled.ts` is the only broadcast path: risk, plan, simulate, local sign from `SOLANA_KEYPAIR_PATH`, then RPC or Jito. It sends only when `TRADING_MODE=live` and `LIVE_NETWORK_SEND=true`. An expired blockhash is not sent. An uncertain signature is not retried. Jupiter execute is not called.
+
+To broadcast after you choose to, on a machine that is not this repo:
+
+1. Fund `2LmzxcxCfijZANvbiDrf8DcVRgUqY6PFwfB7wPVbsXCp`. One buy needs at least 0.029 SOL in that wallet: 0.02 `MIN_SOL_RESERVE`, plus 0.005 `MAX_BUY_SOL`, plus about 0.00391 SOL for the signature, an ATA rent exemption, and the user-volume account rent. Extra SOL does not raise the caps. `MAX_TOTAL_EXPOSURE_SOL` stays 0.03. `PAPER_BUY_SOL` stays 0.005.
+2. Point `SOLANA_KEYPAIR_PATH` at the keypair file. The variable is a filesystem path. Do not put the key, seed, or mnemonic in the environment, the repo, or a prompt.
+3. Set `TRADING_MODE=live` and `LIVE_NETWORK_SEND=true` together. Either one alone still refuses a broadcast.
+4. Leave the hard caps at the values in `config/hard-caps.json`. Strategies and reviews cannot raise them.
+
+The paper loop does not call `runControlled`. Do not set those two flags in committed defaults.
+
 Cursor / Claude Code / Grok Build load `skills/`, `agents/`, and `rules/` from the plugin manifests. On runtimes without persistent Bots, `rules/pumpgrok-team.mdc` says to use subagents or role-labelled passes.
 
 ## Project layout

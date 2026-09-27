@@ -13,6 +13,13 @@ export type Gate = {
   realTrades: false;
 };
 
+export function signGate(env: Record<string, string | undefined>): { open: boolean; reasons: string[] } {
+  const mode = (env.TRADING_MODE || "paper").trim().toLowerCase();
+  const reasons: string[] = [];
+  if (mode !== "live") reasons.push("mode_not_live");
+  return { open: reasons.length === 0, reasons };
+}
+
 export function liveGate(env: Record<string, string | undefined>): Gate {
   const mode = (env.TRADING_MODE || "paper").trim().toLowerCase();
   const send = String(env.LIVE_NETWORK_SEND || "").trim().toLowerCase();
@@ -38,8 +45,9 @@ export function describeLive(env: Record<string, string | undefined>): Record<st
       privateKeyExposed: false,
       liveSendDisabled: true,
       executionEngine: "complete",
-      transactionBuild: "plan_only",
-      wireReady: false,
+      transactionBuild: "wire_ready",
+      wireReady: true,
+      venues: ["pump", "pumpswap"],
     };
   }
   return {
@@ -52,8 +60,9 @@ export function describeLive(env: Record<string, string | undefined>): Record<st
     privateKeyExposed: false,
     liveSendDisabled: true,
     executionEngine: "complete",
-    transactionBuild: "plan_only",
-    wireReady: false,
+    transactionBuild: "wire_ready",
+    wireReady: true,
+    venues: ["pump", "pumpswap"],
     reason: "gate is open but this CLI does not broadcast",
   };
 }
