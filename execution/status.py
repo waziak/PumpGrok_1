@@ -8,7 +8,7 @@ from pathlib import Path
 
 import sqlite3
 
-from .config import StopConfig
+from .config import StopConfig, effective_hard_loss_pct
 from .models import STOP_IS_TRIGGER_NOT_GUARANTEE, StopPosition
 from .profit import ProfitRow, ProfitStore
 from .store import StopStore
@@ -70,6 +70,11 @@ def render_status(
         "PRIVATE KEY EXPOSED=NO",
         "REAL TRADES=NO",
         "LIVE READY=FAIL",
+        f"DEFAULT_STOP_LOSS_PCT={config.default_stop_loss_pct:.2f}",
+        f"HARD_MAX_LOSS_PCT={effective_hard_loss_pct(config.hard_max_loss_pct):.2f}",
+        f"MAX_BUY={config.max_buy_sol:.4f}",
+        f"MAX_EXPOSURE={config.max_exposure_sol:.4f}",
+        f"MIN_RESERVE={config.min_reserve_sol:.4f}",
         STOP_IS_TRIGGER_NOT_GUARANTEE,
         "symbol entry current pnl_pct stop distance_to_stop trailing state",
     ]

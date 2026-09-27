@@ -26,6 +26,7 @@ GROUPS = {
     "HARD EMERGENCY STOP": [
         "test_hard_25_percent_emergency_stop",
         "test_hard_max_loss_ignores_override_attempts",
+        "test_overnight_caps_tighten_hard_loss_and_block_oversized_buys",
     ],
     "TRAILING STOP": [
         "test_trailing_activates_moves_up_and_never_down",

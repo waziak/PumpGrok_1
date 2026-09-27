@@ -30,7 +30,7 @@ The configured percent is a trigger, not a guaranteed max loss.
 
 from __future__ import annotations
 
-from .config import HARD_MAX_LOSS_PCT, StopConfig
+from .config import effective_hard_loss_pct, StopConfig
 from .models import (
     BLOCKING_STATES,
     STOP_IS_TRIGGER_NOT_GUARANTEE,
@@ -181,6 +181,7 @@ class StopEngine:
             raise TradeRejected("position_id_required")
         if self.store.get(request.position_id) is not None:
             raise TradeRejected("position_exists")
+        size_sol = self._check_capital(request)
 
         stop_type, stop_pct, initial_stop = self._normalize_policy(
             request.policy, request.actual_fill_price
@@ -188,8 +189,9 @@ class StopEngine:
         moment = self._now(request.opened_at if request.opened_at is not None else now)
         stamp = iso(moment)
         fill = qprice(request.actual_fill_price)
-        # Hard emergency uses the code constant, not a mutable config field.
-        hard = qprice(fill * (1.0 - HARD_MAX_LOSS_PCT / 100.0))
+        # Wider than the code ceiling is ignored. A lower configured percent is kept.
+        hard_pct = effective_hard_loss_pct(self.config.hard_max_loss_pct)
+        hard = qprice(fill * (1.0 - hard_pct / 100.0))
         symbol = request.symbol.strip() or request.mint[:8]
         pos = StopPosition(
             position_id=request.position_id,
@@ -202,6 +204,7 @@ class StopEngine:
             signal_price=request.signal_price,
             entry_quote_price=request.quote_price,
             size_tokens=qprice(request.size_tokens),
+            size_sol=size_sol,
             remaining_tokens=qprice(request.size_tokens),
             entry_liquidity=request.entry_liquidity,
             current_liquidity=request.entry_liquidity,
@@ -256,6 +259,24 @@ class StopEngine:
             moment,
         )
         return pos
+
+    def _check_capital(self, request: OpenRequest) -> float:
+        """SOL caps apply when the entry declares a SOL size. Token-only opens skip them."""
+        if request.size_sol is None:
+            return 0.0
+        size = float(request.size_sol)
+        if size <= 0:
+            raise TradeRejected("size_sol_required")
+        if size > self.config.max_buy_sol + 1e-12:
+            raise TradeRejected("max_buy")
+        open_sol = sum(pos.size_sol or 0.0 for pos in self.store.load_active())
+        if open_sol + size > self.config.max_exposure_sol + 1e-12:
+            raise TradeRejected("max_exposure")
+        if request.wallet_sol is None:
+            raise TradeRejected("wallet_required")
+        if float(request.wallet_sol) - size + 1e-12 < self.config.min_reserve_sol:
+            raise TradeRejected("min_reserve")
+        return qprice(size)
 
     def _normalize_policy(self, policy: StopPolicy | None, fill: float) -> tuple[str, float, float]:
         if policy is None or not str(policy.stop_type or "").strip():

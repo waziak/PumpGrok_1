@@ -17,6 +17,7 @@ This tool never sends a live transaction and never reads a private key.
 
 import argparse
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -68,8 +69,10 @@ def _paper_buy(args: argparse.Namespace) -> Dict[str, Any]:
             "privateKeyExposed": "NO",
         }
 
-    # This helper is the paper path. It does not inherit a live trading mode.
-    config = StopConfig.from_env({"TRADING_MODE": "paper"})
+    # Paper path. Inherit overnight caps from the process env, but force paper mode.
+    merged = dict(os.environ)
+    merged["TRADING_MODE"] = "paper"
+    config = StopConfig.from_env(merged)
     db_path = Path(args.db) if args.db else default_db_path()
     store = StopStore(db_path)
     engine = StopEngine(store, config, Clock())
@@ -90,6 +93,8 @@ def _paper_buy(args: argparse.Namespace) -> Dict[str, Any]:
             signal_price=args.signal_price,
             quote_price=args.price,
             entry_liquidity=args.liquidity,
+            size_sol=args.size_sol,
+            wallet_sol=args.wallet_sol,
         )
         try:
             position = engine.open_position(request)
@@ -111,6 +116,12 @@ def _paper_buy(args: argparse.Namespace) -> Dict[str, Any]:
             "initialStopPrice": position.initial_stop_price,
             "currentStopPrice": position.current_stop_price,
             "hardStopPrice": position.hard_stop_price,
+            "sizeSol": position.size_sol,
+            "maxBuy": config.max_buy_sol,
+            "maxExposure": config.max_exposure_sol,
+            "minReserve": config.min_reserve_sol,
+            "hardMaxLossPct": config.hard_max_loss_pct,
+            "defaultStopLossPct": config.default_stop_loss_pct,
             "realTrades": "NO",
             "privateKeyExposed": "NO",
         }
@@ -137,6 +148,8 @@ def main(argv: Optional[list] = None) -> None:
     parser.add_argument("--liquidity", type=float, default=None)
     parser.add_argument("--position-id", default="")
     parser.add_argument("--signal-price", type=float, default=None)
+    parser.add_argument("--size-sol", type=float, default=None)
+    parser.add_argument("--wallet-sol", type=float, default=None)
     parser.add_argument("--db", default="")
     args = parser.parse_args(argv)
 

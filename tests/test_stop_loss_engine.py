@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from dataclasses import replace
@@ -394,6 +395,129 @@ def test_hard_max_loss_ignores_override_attempts(tmp_path):
         assert engine.get(pos.position_id).hard_stop_price == pytest.approx(0.75)
     finally:
         engine.close()
+
+
+def test_overnight_caps_tighten_hard_loss_and_block_oversized_buys(tmp_path):
+    loose = StopConfig.from_env({
+        "HARD_MAX_LOSS_PCT": "90",
+        "DEFAULT_STOP_LOSS_PCT": "15",
+        "MAX_BUY": "1",
+        "MAX_EXPOSURE": "5",
+        "MIN_RESERVE": "0.001",
+    })
+    assert loose.default_stop_loss_pct == pytest.approx(15)
+    assert loose.hard_max_loss_pct == pytest.approx(HARD_MAX_LOSS_PCT)
+    assert loose.max_buy_sol == pytest.approx(0.01)
+    assert loose.max_exposure_sol == pytest.approx(0.03)
+    assert loose.min_reserve_sol == pytest.approx(0.025)
+
+    tight = StopConfig.from_env({
+        "HARD_MAX_LOSS_PCT": "20",
+        "DEFAULT_STOP_LOSS_PCT": "15",
+        "MAX_BUY": "0.01",
+        "MAX_EXPOSURE": "0.03",
+        "MIN_RESERVE": "0.025",
+        "TRADING_MODE": "paper",
+    })
+    assert tight.real_trades is False
+    assert tight.live_network_sends is False
+    engine = StopEngine(StopStore(tmp_path / "stops.sqlite"), tight, Clock())
+    try:
+        pos = engine.open_position(
+            req(policy=StopPolicy(StopType.FIXED_PERCENT_STOP, stop_loss_pct=30))
+        )
+        assert pos.current_stop_price == pytest.approx(0.70)
+        assert pos.hard_stop_price == pytest.approx(0.80)
+        held = mark(engine, pos.position_id, 0.81)
+        assert held.should_exit is False
+        fired = mark(engine, pos.position_id, 0.80)
+        assert fired.reason == StopReason.HARD_EMERGENCY_STOP
+        assert fired.priority == "EMERGENCY_EXIT"
+    finally:
+        engine.close()
+
+    caps = StopEngine(StopStore(tmp_path / "caps.sqlite"), tight, Clock())
+    try:
+        with pytest.raises(TradeRejected) as oversized:
+            caps.open_position(replace(req("big"), size_sol=0.02, wallet_sol=1.0))
+        assert oversized.value.reason == "max_buy"
+        with pytest.raises(TradeRejected) as poor:
+            caps.open_position(replace(req("poor"), size_sol=0.01, wallet_sol=0.03))
+        assert poor.value.reason == "min_reserve"
+        for pid in ("a", "b", "c"):
+            opened = caps.open_position(replace(req(pid), size_sol=0.01, wallet_sol=1.0))
+            assert opened.size_sol == pytest.approx(0.01)
+            assert opened.hard_stop_price == pytest.approx(0.80)
+        with pytest.raises(TradeRejected) as full:
+            caps.open_position(replace(req("d"), size_sol=0.01, wallet_sol=1.0))
+        assert full.value.reason == "max_exposure"
+        assert caps.real_trades is False
+    finally:
+        caps.close()
+
+    script = ROOT / "tools" / "paper_sim.py"
+    desk = tmp_path / "desk"
+    db = tmp_path / "paper.sqlite"
+    env = os.environ.copy()
+    env.update({
+        "TRADING_MODE": "live",
+        "HARD_MAX_LOSS_PCT": "20",
+        "DEFAULT_STOP_LOSS_PCT": "15",
+        "MAX_BUY": "0.01",
+        "MAX_EXPOSURE": "0.03",
+        "MIN_RESERVE": "0.025",
+    })
+    bought = subprocess.run(
+        [
+            sys.executable, str(script),
+            "--action", "buy",
+            "--ticket", "SOL-overnight-1",
+            "--mint", "mint",
+            "--size-usd", "1",
+            "--size-sol", "0.01",
+            "--wallet-sol", "1",
+            "--price", "1",
+            "--stop-type", "FIXED_PERCENT_STOP",
+            "--stop-pct", "15",
+            "--symbol", "BONK",
+            "--desk", str(desk),
+            "--db", str(db),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    payload = json.loads(bought.stdout)
+    assert payload["ok"] is True
+    assert payload["realTrades"] == "NO"
+    assert payload["mode"] == "paper"
+    assert payload["currentStopPrice"] == pytest.approx(0.85)
+    assert payload["hardStopPrice"] == pytest.approx(0.80)
+    blocked = subprocess.run(
+        [
+            sys.executable, str(script),
+            "--action", "buy",
+            "--ticket", "SOL-overnight-2",
+            "--mint", "mint",
+            "--size-usd", "1",
+            "--size-sol", "0.02",
+            "--wallet-sol", "1",
+            "--price", "1",
+            "--stop-type", "FIXED_PERCENT_STOP",
+            "--stop-pct", "15",
+            "--desk", str(desk),
+            "--db", str(db),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    denied = json.loads(blocked.stdout)
+    assert denied["ok"] is False
+    assert denied["error"] == "max_buy"
+    assert denied["realTrades"] == "NO"
 
 
 def test_trailing_activates_moves_up_and_never_down(tmp_path):

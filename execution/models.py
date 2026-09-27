@@ -102,6 +102,8 @@ class OpenRequest:
     quote_price: float | None = None
     entry_liquidity: float | None = None
     opened_at: float | None = None
+    size_sol: float | None = None
+    wallet_sol: float | None = None
 
 
 @dataclass
@@ -174,6 +176,7 @@ class StopPosition:
     signal_price: float | None
     entry_quote_price: float | None
     size_tokens: float
+    size_sol: float
     remaining_tokens: float
     entry_liquidity: float | None
     current_liquidity: float | None

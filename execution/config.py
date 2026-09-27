@@ -16,6 +16,10 @@ HARD_MAX_LOSS_PCT = 25.0
 HARD_MAX_LIQUIDITY_DROP_EXIT_PCT = 50.0
 HARD_MIN_STALE_SECONDS = 1.0
 HARD_MAX_STALE_SECONDS = 120.0
+# Overnight capital ceilings. Env may tighten these. It cannot loosen them.
+HARD_MAX_BUY_SOL = 0.01
+HARD_MAX_EXPOSURE_SOL = 0.03
+HARD_MIN_RESERVE_SOL = 0.025
 
 # Names this loader is allowed to read. Anything else in the environment,
 # including key material, is ignored.
@@ -29,6 +33,10 @@ ENV_ALLOWLIST = (
     "LIQUIDITY_DROP_EXIT_PCT",
     "PRICE_STALE_SECONDS",
     "TRADING_MODE",
+    "HARD_MAX_LOSS_PCT",
+    "MAX_BUY",
+    "MAX_EXPOSURE",
+    "MIN_RESERVE",
 )
 
 _FALSE = {"0", "false", "no", "off"}
@@ -36,6 +44,11 @@ _FALSE = {"0", "false", "no", "off"}
 
 def _clamp(value: float, lo: float, hi: float) -> float:
     return min(hi, max(lo, value))
+
+
+def effective_hard_loss_pct(configured: float) -> float:
+    """Loss percent actually armed. Never wider than the code ceiling."""
+    return _clamp(float(configured), HARD_MIN_STOP_LOSS_PCT, HARD_MAX_LOSS_PCT)
 
 
 def _env_float(env: dict[str, str], name: str, default: float) -> float:
@@ -58,6 +71,9 @@ class StopConfig:
     trailing_distance_pct: float = 12.0
     liquidity_drop_exit_pct: float = 50.0
     price_stale_seconds: float = 30.0
+    max_buy_sol: float = HARD_MAX_BUY_SOL
+    max_exposure_sol: float = HARD_MAX_EXPOSURE_SOL
+    min_reserve_sol: float = HARD_MIN_RESERVE_SOL
     trading_mode: str = "paper"
     # These stay false until a future change deliberately wires a sender.
     # Nothing in this package flips them on.
@@ -111,16 +127,39 @@ class StopConfig:
         mode = str(used.get("TRADING_MODE", "paper")).strip().lower() or "paper"
         if mode not in ("paper", "live"):
             mode = "paper"
+        # A higher percent is a wider emergency stop, so it cannot exceed 25.
+        hard_loss = _clamp(
+            _env_float(used, "HARD_MAX_LOSS_PCT", HARD_MAX_LOSS_PCT),
+            HARD_MIN_STOP_LOSS_PCT,
+            HARD_MAX_LOSS_PCT,
+        )
+        max_buy = min(_env_float(used, "MAX_BUY", HARD_MAX_BUY_SOL), HARD_MAX_BUY_SOL)
+        if max_buy <= 0:
+            max_buy = HARD_MAX_BUY_SOL
+        max_exposure = min(
+            _env_float(used, "MAX_EXPOSURE", HARD_MAX_EXPOSURE_SOL),
+            HARD_MAX_EXPOSURE_SOL,
+        )
+        if max_exposure <= 0:
+            max_exposure = HARD_MAX_EXPOSURE_SOL
+        # A smaller reserve is looser, so it cannot fall below the ceiling.
+        min_reserve = max(
+            _env_float(used, "MIN_RESERVE", HARD_MIN_RESERVE_SOL),
+            HARD_MIN_RESERVE_SOL,
+        )
         return cls(
             default_stop_loss_pct=default_pct,
             min_stop_loss_pct=min_pct,
             max_stop_loss_pct=max_pct,
-            hard_max_loss_pct=HARD_MAX_LOSS_PCT,
+            hard_max_loss_pct=hard_loss,
             trailing_enabled=trailing,
             trailing_activation_pct=activation,
             trailing_distance_pct=distance,
             liquidity_drop_exit_pct=liquidity,
             price_stale_seconds=stale,
+            max_buy_sol=max_buy,
+            max_exposure_sol=max_exposure,
+            min_reserve_sol=min_reserve,
             trading_mode=mode,
             real_trades=False,
             private_key_exposed=False,

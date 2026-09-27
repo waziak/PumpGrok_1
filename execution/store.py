@@ -77,6 +77,8 @@ def position_from_row(row: sqlite3.Row) -> StopPosition:
         value = row[name]
         if name in BOOL_FIELDS:
             value = bool(value)
+        if name == "size_sol" and value is None:
+            value = 0.0
         data[name] = value
     return StopPosition(**data)  # type: ignore[arg-type]
 
@@ -99,6 +101,7 @@ class StopStore:
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=DELETE")
         self._conn.execute(_create_sql())
+        self._ensure_columns()
         self._conn.execute(
             """
             CREATE TABLE IF NOT EXISTS stop_events (
@@ -137,6 +140,13 @@ class StopStore:
             "CREATE INDEX IF NOT EXISTS idx_stop_state ON stop_positions(stop_state)"
         )
         self._conn.commit()
+
+    def _ensure_columns(self) -> None:
+        have = {row[1] for row in self._conn.execute("PRAGMA table_info(stop_positions)")}
+        for name in COLUMNS:
+            if name in have:
+                continue
+            self._conn.execute(f"ALTER TABLE stop_positions ADD COLUMN {name} {_affinity(name)}")
 
     def close(self) -> None:
         self._conn.close()
