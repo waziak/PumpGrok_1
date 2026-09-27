@@ -160,6 +160,34 @@ class CycleTests(unittest.TestCase):
         reasons = result["entries"][0]["reasons"]
         self.assertIn("ai_risk_override", reasons)
 
+    def test_qualify_only_does_not_paper_trade_and_keeps_risk_veto(self) -> None:
+        funded = {
+            "candidates": [passing()],
+            "qualify_only": True,
+            "wallet": {"balanceLamports": 1_000_000_000},
+            "open_exposure_sol": 0,
+            "grok": {"available": False, "reason": "GROK_API_KEY_REQUIRED"},
+        }
+        passed = run_cycle(self.db, load_thresholds({}), strategies(), funded, now=NOW)
+        self.assertEqual(passed["paper_trades"], 0)
+        self.assertEqual(passed["sent"], False)
+        self.assertEqual(passed["real_trades"], False)
+        self.assertEqual(passed["qualified_entries"], 1)
+        self.assertEqual(passed["qualified_live"][0]["execution_class"], "FAST")
+        self.assertEqual(passed["scope"][0]["decision"], "PASS")
+        veto = passing(candidate_id="other", mint="8PaperMint1111111111111111111111111111111")
+        veto["features"]["liquidity_sol"] = 1
+        blocked = run_cycle(
+            self.db,
+            load_thresholds({}),
+            strategies(),
+            {"candidates": [veto], "qualify_only": True, "wallet": {"balanceLamports": 1_000_000_000}},
+            now=NOW,
+        )
+        self.assertEqual(blocked["qualified_entries"], 0)
+        self.assertEqual(blocked["paper_trades"], 0)
+        self.assertIn("low_liquidity", blocked["scope"][0]["reasons"])
+
 
 if __name__ == "__main__":
     unittest.main()

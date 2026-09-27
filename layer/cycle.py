@@ -73,6 +73,8 @@ def run_cycle(
     exits: list[dict[str, Any]] = []
     evaluations = 0
     qualified = 0
+    qualified_live: list[dict[str, Any]] = []
+    scope: list[dict[str, Any]] = []
 
     candidates = payload.get("candidates") or []
     if not isinstance(candidates, list):
@@ -109,12 +111,22 @@ def run_cycle(
         enter = None
         if chosen is not None:
             strategy = next(item for item in ordered if item["strategy_id"] == chosen["strategy_id"])
-            if strategy["execution_class"] == "FAST":
-                # Numbers only. Qualitative notes do not change the entry.
-                pass
-            enter = engine.enter_discovered(candidate, strategy, now=now)
-            risk_decision = "PASS" if enter.get("traded") else "REJECT" if enter.get("decision") == "REJECT" else None
-            if enter.get("traded"):
+            if payload.get("qualify_only") is True:
+                enter = _qualify_fast(
+                    db,
+                    thresholds,
+                    candidate,
+                    strategy,
+                    payload,
+                    now=now,
+                )
+            else:
+                if strategy["execution_class"] == "FAST":
+                    # Numbers only. Qualitative notes do not change the entry.
+                    pass
+                enter = engine.enter_discovered(candidate, strategy, now=now)
+            risk_decision = "PASS" if enter.get("traded") or enter.get("qualified") else "REJECT" if enter.get("decision") == "REJECT" else None
+            if enter.get("traded") or enter.get("qualified"):
                 qualified += 1
                 chosen["entry_reason"] = "risk_pass_and_rules_matched"
                 chosen["rejection_reason"] = None
@@ -128,7 +140,7 @@ def run_cycle(
             for row in rows:
                 if row is chosen:
                     continue
-                if row["matched"] and row["execution_class"] in EXECUTABLE and enter.get("traded"):
+                if row["matched"] and row["execution_class"] in EXECUTABLE and (enter.get("traded") or enter.get("qualified")):
                     row["entry_reason"] = None
                     row["rejection_reason"] = "duplicate_mint"
         for row in rows:
@@ -143,6 +155,10 @@ def run_cycle(
                 db.add_review(candidate["candidate_id"], review)
         if enter is not None:
             entries.append(enter)
+            if enter.get("qualified") and enter.get("execution_class") == "FAST":
+                qualified_live.append(enter)
+        if payload.get("qualify_only") is True:
+            scope.append(_scope_row(candidate, rows, enter))
 
     marks = _marks(payload)
     for position in db.open_positions():
@@ -187,6 +203,8 @@ def run_cycle(
         "entries": entries,
         "exits": exits,
         "qualified_entries": qualified,
+        "qualified_live": qualified_live,
+        "scope": scope,
         "open_positions": len(db.open_positions()),
         "open_mints": [row["mint"] for row in db.open_positions()],
         "paper_trades": db.counts()["paper_trades"],
@@ -194,6 +212,105 @@ def run_cycle(
         "grok_reason": health["grok_reason"],
         "live_send_disabled": True,
         "cycle_ms": elapsed_ms,
+    }
+
+
+def _payload_wallet_sol(payload: dict[str, Any]) -> float | None:
+    wallet = payload.get("wallet")
+    if not isinstance(wallet, dict):
+        return None
+    lamports = wallet.get("balanceLamports")
+    if isinstance(lamports, int):
+        return lamports / 1_000_000_000
+    sol = wallet.get("sol")
+    if isinstance(sol, (int, float)) and not isinstance(sol, bool):
+        return float(sol)
+    return None
+
+
+def _qualify_fast(
+    db: ResearchDB,
+    thresholds: Thresholds,
+    candidate: dict[str, Any],
+    strategy: dict[str, Any],
+    payload: dict[str, Any],
+    *,
+    now: datetime,
+) -> dict[str, Any]:
+    """Score a live candidate. Does not open a paper fill and does not broadcast."""
+    mint = str(candidate.get("mint") or "")
+    open_mints = {item for item in (payload.get("open_mints") or []) if isinstance(item, str)}
+    base = {
+        "ok": True,
+        "traded": False,
+        "qualified": False,
+        "sent": False,
+        "real_trades": False,
+        "mode": "qualify",
+        "mint": mint,
+        "program": candidate.get("program"),
+        "symbol": candidate.get("symbol"),
+        "strategy_id": strategy.get("strategy_id"),
+        "execution_class": strategy.get("execution_class"),
+        "slippage_bps": candidate.get("slippage_bps"),
+        "price_sol": candidate.get("features", {}).get("price_sol"),
+        "candidate_id": candidate.get("candidate_id"),
+    }
+    if mint in open_mints:
+        return base | {"decision": "REJECT", "reason": "duplicate_mint", "reasons": ["duplicate_mint"]}
+    exposure = payload.get("open_exposure_sol")
+    open_exposure = float(exposure) if isinstance(exposure, (int, float)) and not isinstance(exposure, bool) else 0.0
+    result = evaluate(
+        candidate,
+        thresholds,
+        now=now,
+        open_exposure_sol=open_exposure,
+        wallet_sol=_payload_wallet_sol(payload),
+    )
+    db.add_risk_decision(
+        {
+            "candidate_id": candidate["candidate_id"],
+            "decision": result.decision,
+            "reasons": result.reasons,
+            "thresholds": thresholds.as_public_dict(),
+            "override_attempt": result.override_attempt,
+        }
+    )
+    if not result.passed or result.size_sol is None:
+        return base | {"decision": "REJECT", "reasons": result.reasons}
+    if strategy.get("execution_class") != "FAST":
+        return base | {"decision": "REJECT", "reasons": ["not_fast"], "size_sol": result.size_sol}
+    return base | {
+        "qualified": True,
+        "decision": "PASS",
+        "reasons": [],
+        "size_sol": result.size_sol,
+    }
+
+
+def _scope_row(
+    candidate: dict[str, Any],
+    rows: list[dict[str, Any]],
+    enter: dict[str, Any] | None,
+) -> dict[str, Any]:
+    fast = next((row for row in rows if row["strategy_id"] == "prebond-volume-regime"), None)
+    reasons: list[str] = []
+    if enter and isinstance(enter.get("reasons"), list):
+        reasons = [str(item) for item in enter["reasons"]]
+    elif enter and enter.get("reason"):
+        reasons = [str(enter["reason"])]
+    elif fast and fast.get("rejection_reason"):
+        reasons = [str(fast["rejection_reason"])]
+    return {
+        "mint": candidate.get("mint"),
+        "symbol": candidate.get("symbol"),
+        "program": candidate.get("program"),
+        "strategy_id": None if fast is None else fast.get("strategy_id"),
+        "execution_class": None if fast is None else fast.get("execution_class"),
+        "matched": bool(fast and fast.get("matched")),
+        "decision": "PASS" if enter and enter.get("qualified") else "REJECT",
+        "reasons": reasons,
+        "qualified": bool(enter and enter.get("qualified")),
     }
 
 

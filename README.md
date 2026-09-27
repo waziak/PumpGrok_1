@@ -88,6 +88,20 @@ To broadcast after you choose to, on a machine that is not this repo:
 
 The paper loop does not call `runControlled`. Do not set those two flags in committed defaults.
 
+## Live bot
+
+`npm run live-bot` scans the same public Pump and PumpSwap sources as the paper bot, then asks the Python layer to qualify with `qualify_only` (no paper fill). Only a FAST strategy pass that also clears the risk veto can become a buy. `npm run bot` stays paper-only and does not import this loop.
+
+With the default environment the live bot still refuses to send. It writes `data/live-status.json` and appends `data/live-events.jsonl`, and serves a scope and trade view at `http://127.0.0.1:8787/` (`LIVE_VIEW=0` turns the view off, `LIVE_VIEW_PORT` changes the port).
+
+To broadcast a micro buy from that loop, fund the wallet as above, set `SOLANA_KEYPAIR_PATH`, and export both `TRADING_MODE=live` and `LIVE_NETWORK_SEND=true` in the shell. Then:
+
+```bash
+npm run live-bot
+```
+
+The loop uses `SOLANA_RPC_URL` for `getLatestBlockhash`, `simulateTransaction`, `sendRawTransaction` (`maxRetries` 0), and `getSignatureStatuses`. It does not print key material. One buy stays at or under 0.005 SOL. Stop the process with Ctrl-C. `npm run live` remains a gate check and does not start this loop.
+
 Cursor / Claude Code / Grok Build load `skills/`, `agents/`, and `rules/` from the plugin manifests. On runtimes without persistent Bots, `rules/pumpgrok-team.mdc` says to use subagents or role-labelled passes.
 
 ## Project layout
